@@ -3,7 +3,7 @@
     "name": "SpiderNote",
     "owner": "totemn",
     "slug": "spidernote",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "spidernote",
@@ -45,7 +45,24 @@
       "expo-asset",
       [
         "expo-navigation-bar",
-        { "hidden": true, "style": "light", "enforceContrast": false }
+        {
+          "hidden": true,
+          "style": "light",
+          "enforceContrast": false
+        }
+      ],
+      [
+        "llama.rn",
+        { "enableOpenCLAndHexagon": false, "enableEntitlements": false }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": ["arm64-v8a"],
+            "extraProguardRules": "-keep class com.rnwhisper.** { *; }\n-keep class com.rnllama.** { *; }"
+          }
+        }
       ]
     ],
     "experiments": {
