@@ -2,6 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync, rmdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
   migrate,
@@ -12,6 +15,7 @@ import {
   finishRecording,
   getNote,
   getTags,
+  checkpoint,
 } from "../src/db/repository.ts";
 import {
   cleanDeletedNotes,
@@ -19,8 +23,8 @@ import {
   reconcileRecordings,
 } from "../src/services/recovery.ts";
 
-function database() {
-  const raw = new DatabaseSync(":memory:");
+function database(path = ":memory:") {
+  const raw = new DatabaseSync(path);
   const db = {
     execAsync: async (sql: string) => {
       raw.exec(sql);
@@ -49,6 +53,81 @@ function database() {
   } as unknown as SQLiteDatabase;
   return { db, raw };
 }
+
+test("file-backed notes and finalized audio metadata survive a database restart", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "spidernote-test-"));
+  const path = join(directory, "notes.db");
+  let connection = database(path);
+  try {
+    await migrate(connection.db);
+    await beginRecording(connection.db, "persistent", "Audio/persistent.m4a");
+    await finishRecording(
+      connection.db,
+      "persistent",
+      30000,
+      "Audio/persistent.m4a",
+    );
+    await saveNote(
+      connection.db,
+      "persistent",
+      "Class recap",
+      "Balikan bukas",
+      null,
+      ["study"],
+    );
+    connection.raw.close();
+    connection = database(path);
+    await migrate(connection.db);
+    const note = await getNote(connection.db, "persistent");
+    assert.equal(note?.body, "Balikan bukas");
+    assert.equal(note?.duration_ms, 30000);
+    assert.equal(note?.recording_status, "saved");
+    assert.deepEqual(await getTags(connection.db, "persistent"), ["study"]);
+  } finally {
+    connection.raw.close();
+    // Only remove the explicitly created SQLite files; never recursively delete temp roots.
+    for (const suffix of ["", "-wal", "-shm"])
+      rmSync(path + suffix, { force: true });
+    rmdirSync(directory);
+  }
+});
+
+test("late checkpoints cannot regress duration or mutate a finalized recording", async () => {
+  const { db, raw } = database();
+  try {
+    await migrate(db);
+    await beginRecording(db, "checkpoint", "Audio/checkpoint.m4a");
+    await checkpoint(db, "checkpoint", 10000);
+    await checkpoint(db, "checkpoint", 8000);
+    assert.equal((await getNote(db, "checkpoint"))?.duration_ms, 10000);
+    await finishRecording(db, "checkpoint", 12000, "Audio/checkpoint.m4a");
+    await checkpoint(db, "checkpoint", 14000);
+    assert.equal((await getNote(db, "checkpoint"))?.duration_ms, 12000);
+  } finally {
+    raw.close();
+  }
+});
+
+test("deleting a notebook preserves its notes and recordings as unfiled", async () => {
+  const { db, raw } = database();
+  try {
+    await migrate(db);
+    await beginRecording(db, "kept", "Audio/kept.m4a");
+    await db.runAsync(
+      "INSERT INTO notebooks VALUES (?,?,?)",
+      "book",
+      "Meetings",
+      new Date().toISOString(),
+    );
+    await saveNote(db, "kept", "Meeting", "Follow up", "book", []);
+    await db.runAsync("DELETE FROM notebooks WHERE id=?", "book");
+    const note = await getNote(db, "kept");
+    assert.equal(note?.notebook_id, null);
+    assert.equal(note?.recording_id, "kept");
+  } finally {
+    raw.close();
+  }
+});
 
 test("migrations are repeatable and a recording draft is atomic", async () => {
   const { db, raw } = database();
