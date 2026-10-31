@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
+import Constants from "expo-constants";
 import { useSQLiteContext } from "expo-sqlite";
 import {
   listNotes,
@@ -302,7 +303,10 @@ export default function Settings() {
       </Notice>
       <Text style={ui.heading}>About this build</Text>
       <View style={ui.card}>
-        <Text style={ui.body}>SpiderNote 0.1 · Android beta</Text>
+        <Text style={ui.body}>
+          SpiderNote {Constants.expoConfig?.version ?? "development"} · Android
+          beta
+        </Text>
         <Text style={ui.body}>
           Keep the app open while recording. Cloud transcription and AI
           summaries will be added after recording and recovery pass real-device
