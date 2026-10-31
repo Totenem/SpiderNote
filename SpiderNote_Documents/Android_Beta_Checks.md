@@ -32,3 +32,15 @@ Record app version, Android API level, device model, free storage and build URL.
 Test TalkBack labels, large text, keyboard avoidance, small phone layout, Android back gestures, and controls near navigation bars. Recording state must be understandable without relying on color or animation.
 
 Cloud AI integration remains gated on these reliability checks. No network uploads are performed by the product flow in this build. Development tooling may communicate with Expo/Metro.
+
+## Feedback regression checks (October 31)
+
+- Upgrade in place using the same Android package and signing key; do not uninstall or clear storage. Confirm existing audio and descriptions remain available.
+- Recordings tab lists existing recordings, excludes typed-only notes, and opens the saved audio. Its New recording action starts a fresh session.
+- In three-button and gesture navigation modes, all app-tab labels stay above visible system controls. Hide phone navigation bar is enabled by default. Toggle it off/on in Settings and restart; the preference persists. Swipe from the bottom to reveal transient controls. Open/close the keyboard and system dialogs, then recheck the tabs. Check TalkBack and a large display/text size.
+- Library no longer has a search shortcut; the Search tab remains available.
+- Edit title: the bordered, labelled input is obvious, Cancel keeps the original title, Save title persists it across restart, and empty titles cannot be saved through the title action. Editing then pressing Back invokes the unsaved-change guard.
+- Change the description, then save only the title. The description must remain marked unsaved; saving the title must not silently commit or discard those edits. Export with an unsaved title through the normal Save flow and check the exported title is correct.
+- Search a word in a title, a word found only in a description, a tag, and a multiword query split between title and description. Word-start prefixes should match. Existing notes are indexed on upgrade. Edits and deletions immediately change results. Verify literal punctuation such as 100% does not become a wildcard. Type quickly and confirm old responses do not replace newer results.
+
+Cloud AI design now has a separate [implementation plan](Groq_AI_Implementation_Plan.md). Planning can proceed from the user's positive basic-recording feedback while the longer hardware acceptance tests remain pending.

@@ -27,6 +27,8 @@ EAS project: [@totemn/spidernote](https://expo.dev/accounts/totemn/projects/spid
 - Startup reconciliation exposes interrupted or missing audio without deleting source files. Recovery means preserving available files; an abruptly terminated M4A may not be playable.
 - Playback with seek, 1/1.5/2x speed and saved resume position.
 - Written notes, explicit save, unsaved-change protection, pinning, notebooks, comma-separated tags, title/body/tag search.
+- A dedicated recordings list, explicit title editing with Save/Cancel, and optional Android navigation-bar hiding with safe-area-aware app tabs.
+- FTS5 word-prefix search across titles, descriptions and tags, with ranked results, typing debounce, upgrade backfill and keyword fallback.
 - Original audio sharing, TXT/Markdown note export, all-written-notes export, confirmed deletion and retryable file cleanup.
 - Privacy onboarding, storage information, editable SVG identity and Android launcher/splash assets.
 
@@ -46,6 +48,8 @@ npx.cmd expo export --platform android --output-dir dist-android
 The tests execute the real SQL schema and repository queries against Node SQLite, including rollback, literal search, tags, interrupted recordings, and deletion retry. They model Expo's isolated transaction connections without inherited foreign-key PRAGMAs. They do not simulate Android microphone hardware or prove force-close M4A recovery.
 
 See [Android beta checks](SpiderNote_Documents/Android_Beta_Checks.md) for the device acceptance gate. The SDK 58 toolchain currently has transitive npm advisories; review before public release. Do not apply `npm audit fix --force`, which proposes incompatible Expo downgrades.
+
+The next cloud iteration is specified in [Groq AI implementation plan](SpiderNote_Documents/Groq_AI_Implementation_Plan.md): five note formats, consent, backend credentials, authentication, quota enforcement and prompt-injection defenses. It is a plan, not an enabled AI integration. The Groq key belongs only on the backend; the app will contain the public backend URL. The navigation-bar module requires a fresh native APK before these UI changes can be tested on the installed beta.
 
 ## Structure
 
