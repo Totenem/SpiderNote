@@ -1,13 +1,15 @@
-import { useDeferredValue, useState } from "react";
+import { useState } from "react";
 import { FlatList, Text, TextInput, View } from "react-native";
 import { Empty, Icon, IconButton, Notice, Screen } from "@/components/kit";
 import { NoteCard } from "@/components/NoteCard";
 import { useNotes } from "@/hooks/use-notes";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { C, ui } from "@/theme/tokens";
 export default function Search() {
   const [query, setQuery] = useState("");
-  const deferred = useDeferredValue(query);
-  const { notes, error } = useNotes(deferred);
+  const debounced = useDebouncedValue(query);
+  const { notes, error, loading } = useNotes(debounced);
+  const searching = query !== debounced;
   return (
     <Screen scroll={false}>
       <FlatList
@@ -28,10 +30,13 @@ export default function Search() {
                 accessibilityLabel="Search notes"
                 value={query}
                 onChangeText={setQuery}
-                placeholder="A word, an idea, a little reminder…"
+                placeholder="Search titles, descriptions, or tags"
                 placeholderTextColor={C.muted}
                 style={{ flex: 1, minHeight: 48, color: C.ink }}
                 returnKeyType="search"
+                maxLength={200}
+                autoCapitalize="none"
+                autoCorrect={false}
               />
               {query ? (
                 <IconButton
@@ -42,9 +47,11 @@ export default function Search() {
               ) : null}
             </View>
             <Text style={ui.caption}>
-              {query.trim()
-                ? `${notes.length} matching ${notes.length === 1 ? "note" : "notes"}`
-                : "ALL YOUR NOTES"}
+              {searching || loading
+                ? "Searching…"
+                : query.trim()
+                  ? `${notes.length} matching ${notes.length === 1 ? "note" : "notes"}`
+                  : "ALL YOUR NOTES"}
             </Text>
             {error && <Notice error>{error}</Notice>}
           </View>
@@ -53,7 +60,7 @@ export default function Search() {
         ListEmptyComponent={
           <Empty
             title="No thoughts found."
-            body="Try another word or tag. Audio becomes searchable when you add written notes."
+            body="Try a title, a word from the description, or a tag. You can combine words, like ‘meeting budget’."
           />
         }
       />

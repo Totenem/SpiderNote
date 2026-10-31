@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import { schemaV1 } from "./schema.ts";
+import { hasSearchIndex, initializeSearch, prepareSearch } from "./search.ts";
 
 export type RecordingStatus = "recording" | "saved" | "interrupted" | "missing";
 export type Note = {
@@ -55,6 +56,7 @@ export async function migrate(db: SQLiteDatabase) {
     await transaction(db, async (tx) => {
       await tx.execAsync(schemaV1);
     });
+  await initializeSearch(db);
 }
 
 export function listNotes(
@@ -63,23 +65,43 @@ export function listNotes(
   filter = "all",
   notebookId?: string,
 ) {
-  // Literal keyword matching: %, _ and backslash are not wildcards from user input.
-  const needle = `%${query.trim().replace(/[\\%_]/g, "\\$&")}%`;
-  return db.getAllAsync<Note>(
-    `${selectNote} WHERE n.deleted_at IS NULL
+  const search = prepareSearch(query);
+  const filterSql = `n.deleted_at IS NULL
     AND (? = 'all' OR (? = 'audio' AND r.id IS NOT NULL) OR (? = 'pinned' AND n.is_pinned=1))
-    AND (? IS NULL OR n.notebook_id=?)
-    AND (n.title LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\'
-      OR EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE nt.note_id=n.id AND t.name LIKE ? ESCAPE '\\'))
+    AND (? IS NULL OR n.notebook_id=?)`;
+  const params = [
+    filter,
+    filter,
+    filter,
+    notebookId ?? null,
+    notebookId ?? null,
+  ];
+  if (search.fts && hasSearchIndex(db)) {
+    return db.getAllAsync<Note>(
+      `${selectNote} JOIN note_search ON note_search.note_id=n.id
+      WHERE ${filterSql} AND note_search MATCH ?
+      ORDER BY (lower(n.title)=lower(?)) DESC, bm25(note_search,0,8,3,1), n.updated_at DESC`,
+      ...params,
+      search.fts,
+      search.text,
+    );
+  }
+  const terms = search.terms.length ? search.terms : [""];
+  const matches = terms
+    .map(
+      () => `(n.title LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\'
+    OR EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE nt.note_id=n.id AND t.name LIKE ? ESCAPE '\\'))`,
+    )
+    .join(" AND ");
+  const needles = terms.flatMap((term) => {
+    const escaped = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+    return [escaped, escaped, escaped];
+  });
+  return db.getAllAsync<Note>(
+    `${selectNote} WHERE ${filterSql} AND ${matches}
     ORDER BY n.is_pinned DESC, n.updated_at DESC`,
-    filter,
-    filter,
-    filter,
-    notebookId ?? null,
-    notebookId ?? null,
-    needle,
-    needle,
-    needle,
+    ...params,
+    ...needles,
   );
 }
 export function getNote(db: SQLiteDatabase, id: string) {

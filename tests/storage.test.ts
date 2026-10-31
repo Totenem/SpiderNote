@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SQLiteDatabase } from "expo-sqlite";
+import { schemaV1 } from "../src/db/schema.ts";
 import {
   migrate,
   beginRecording,
@@ -53,6 +54,74 @@ function database(path = ":memory:") {
   } as unknown as SQLiteDatabase;
   return { db, raw };
 }
+
+test("indexed search backfills existing notes, matches title and description together, and follows edits", async () => {
+  const { db, raw } = database();
+  try {
+    raw.exec(schemaV1);
+    await createNote(db, "search-upgrade", "Quarterly roadmap");
+    await saveNote(
+      db,
+      "search-upgrade",
+      "Quarterly roadmap",
+      "Budget for next sprint",
+      null,
+      ["planning"],
+    );
+    await migrate(db);
+    assert.equal((await listNotes(db, "road budg"))[0]?.id, "search-upgrade");
+    assert.equal((await listNotes(db, "SPRINT"))[0]?.id, "search-upgrade");
+    assert.equal((await listNotes(db, "plann"))[0]?.id, "search-upgrade");
+    await saveNote(
+      db,
+      "search-upgrade",
+      "Research review",
+      "Interview themes",
+      null,
+      ["insights"],
+    );
+    assert.equal((await listNotes(db, "budget")).length, 0);
+    assert.equal(
+      (await listNotes(db, "review interv"))[0]?.id,
+      "search-upgrade",
+    );
+    assert.equal((await listNotes(db, "planning")).length, 0);
+    await db.runAsync(
+      "UPDATE tags SET name=? WHERE name=?",
+      "findings",
+      "insights",
+    );
+    assert.equal((await listNotes(db, "findings"))[0]?.id, "search-upgrade");
+    await deleteNote(db, { size: () => 0, remove: () => {} }, "search-upgrade");
+    assert.equal((await listNotes(db, "research")).length, 0);
+    assert.equal((await db.getAllAsync("SELECT * FROM note_search")).length, 0);
+  } finally {
+    raw.close();
+  }
+});
+
+test("search falls back when FTS5 is unavailable and treats wildcard punctuation literally", async () => {
+  const { db, raw } = database();
+  const execute = db.execAsync.bind(db);
+  db.execAsync = async (sql) => {
+    if (sql.includes("CREATE VIRTUAL TABLE"))
+      throw new Error("no such module: fts5");
+    await execute(sql);
+  };
+  try {
+    await migrate(db);
+    await createNote(db, "fallback");
+    await saveNote(db, "fallback", "Project 100%", "Budget for launch", null, [
+      "work",
+    ]);
+    assert.equal((await listNotes(db, "project budget"))[0]?.id, "fallback");
+    assert.equal((await listNotes(db, "100%"))[0]?.id, "fallback");
+    assert.equal((await listNotes(db, "%missing")).length, 0);
+    assert.equal((await listNotes(db, "' OR 1=1 --")).length, 0);
+  } finally {
+    raw.close();
+  }
+});
 
 test("file-backed notes and finalized audio metadata survive a database restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "spidernote-test-"));

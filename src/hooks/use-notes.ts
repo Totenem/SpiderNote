@@ -17,11 +17,10 @@ export function useNotes(query = "", filter = "all", notebook?: string) {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      Promise.all([listNotes(db, query, filter, notebook), listNotebooks(db)])
-        .then(([items, books]) => {
+      listNotes(db, query, filter, notebook)
+        .then((items) => {
           if (active) {
             setNotes(items);
-            setNotebooks(books);
             setError("");
             setLoading(false);
           }
@@ -36,6 +35,21 @@ export function useNotes(query = "", filter = "all", notebook?: string) {
         active = false;
       };
     }, [db, query, filter, notebook]),
+  );
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      listNotebooks(db)
+        .then((books) => {
+          if (active) setNotebooks(books);
+        })
+        .catch((error) => {
+          if (active) setError(errorMessage(error));
+        });
+      return () => {
+        active = false;
+      };
+    }, [db]),
   );
   return { notes, notebooks, error, loading };
 }
