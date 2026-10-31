@@ -39,6 +39,8 @@ export default function NoteEditor() {
   const [note, setNote] = useState<Note | null>(null);
   const [books, setBooks] = useState<Notebook[]>([]);
   const [title, setTitle] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
   const [body, setBody] = useState("");
   const [tags, setTags] = useState("");
   const [notebook, setNotebook] = useState<string | null>(null);
@@ -47,32 +49,36 @@ export default function NoteEditor() {
   const lock = useRef(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
-  const disablePrevention = usePreventRemove(dirty || busy, ({ repeat }) => {
-    if (busy) return;
-    Alert.alert(
-      "Keep your changes?",
-      "Save this note before leaving, or discard your unsaved edits.",
-      [
-        { text: "Keep editing", style: "cancel" },
-        {
-          text: "Discard edits",
-          style: "destructive",
-          onPress: () => {
-            setDirty(false);
-            repeat();
+  const disablePrevention = usePreventRemove(
+    dirty || busy || editingTitle,
+    ({ repeat }) => {
+      if (busy) return;
+      Alert.alert(
+        "Keep your changes?",
+        "Save this note before leaving, or discard your unsaved edits.",
+        [
+          { text: "Keep editing", style: "cancel" },
+          {
+            text: "Discard edits",
+            style: "destructive",
+            onPress: () => {
+              setDirty(false);
+              setEditingTitle(false);
+              repeat();
+            },
           },
-        },
-        {
-          text: "Save & leave",
-          onPress: () => {
-            persist().then((saved) => {
-              if (saved) repeat();
-            });
+          {
+            text: "Save & leave",
+            onPress: () => {
+              persist().then((saved) => {
+                if (saved) repeat();
+              });
+            },
           },
-        },
-      ],
-    );
-  });
+        ],
+      );
+    },
+  );
   useEffect(() => {
     let active = true;
     Promise.all([getNote(db, id), getTags(db, id), listNotebooks(db)])
@@ -81,6 +87,7 @@ export default function NoteEditor() {
         if (!value) throw Error("This note is no longer available.");
         setNote(value);
         setTitle(value.title);
+        setTitleDraft(value.title);
         setBody(value.body);
         setTags(names.join(", "));
         setNotebook(value.notebook_id);
@@ -102,13 +109,41 @@ export default function NoteEditor() {
     lock.current = true;
     setBusy(true);
     try {
-      await saveNote(db, id, title, body, notebook, tags.split(","));
+      const nextTitle =
+        (editingTitle ? titleDraft : title).trim() || "Untitled note";
+      await saveNote(db, id, nextTitle, body, notebook, tags.split(","));
+      setTitle(nextTitle);
+      setTitleDraft(nextTitle);
+      setEditingTitle(false);
       setDirty(false);
       setError("");
       return true;
     } catch (error) {
       setError(errorMessage(error));
       return false;
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  async function saveTitle() {
+    if (lock.current || !note || !titleDraft.trim()) return;
+    lock.current = true;
+    setBusy(true);
+    try {
+      const nextTitle = titleDraft.trim();
+      await db.runAsync(
+        "UPDATE notes SET title=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
+        nextTitle,
+        new Date().toISOString(),
+        id,
+      );
+      setTitle(nextTitle);
+      setTitleDraft(nextTitle);
+      setEditingTitle(false);
+      setError("");
+    } catch (error) {
+      setError(errorMessage(error));
     } finally {
       lock.current = false;
       setBusy(false);
@@ -135,6 +170,7 @@ export default function NoteEditor() {
                   "The note is removed from your library. Audio cleanup will retry when the app next opens.",
                 );
               setDirty(false);
+              setEditingTitle(false);
               disablePrevention();
               router.replace("/");
             } catch (error) {
@@ -148,9 +184,11 @@ export default function NoteEditor() {
       ],
     );
   const exportNote = async (markdown: boolean) => {
+    const exportTitle =
+      (editingTitle ? titleDraft : title).trim() || "Untitled note";
     if (await persist()) {
       try {
-        await exportText(id, title.trim() || "Untitled note", body, markdown);
+        await exportText(id, exportTitle, body, markdown);
       } catch (error) {
         setError(errorMessage(error));
       }
@@ -183,7 +221,9 @@ export default function NoteEditor() {
           <>
             <View style={ui.between}>
               <Text style={ui.eyebrow}>
-                {dirty ? "UNSAVED CHANGES" : "SAVED ON THIS DEVICE"}
+                {dirty || editingTitle
+                  ? "UNSAVED CHANGES"
+                  : "SAVED ON THIS DEVICE"}
               </Text>
               <IconButton
                 name="pin"
@@ -203,19 +243,71 @@ export default function NoteEditor() {
                 }}
               />
             </View>
-            <TextInput
-              accessibilityLabel="Note title"
-              value={title}
-              onChangeText={(value) => {
-                setTitle(value);
-                setDirty(true);
-              }}
-              multiline
-              maxLength={200}
-              placeholder="Give this thought a title"
-              placeholderTextColor={C.muted}
-              style={[ui.title, { padding: 0, minHeight: 50 }]}
-            />
+            <View style={ui.card}>
+              <View style={ui.between}>
+                <Text style={[ui.heading, { flex: 1 }]}>Note title</Text>
+                {!editingTitle && (
+                  <Button
+                    label="Edit title"
+                    secondary
+                    icon="notes"
+                    disabled={busy}
+                    onPress={() => {
+                      setTitleDraft(title);
+                      setEditingTitle(true);
+                    }}
+                  />
+                )}
+              </View>
+              {editingTitle ? (
+                <>
+                  <TextInput
+                    accessibilityLabel="Note title"
+                    value={titleDraft}
+                    onChangeText={setTitleDraft}
+                    autoFocus
+                    editable={!busy}
+                    multiline
+                    maxLength={200}
+                    placeholder="Give this thought a title"
+                    placeholderTextColor={C.muted}
+                    style={[
+                      ui.input,
+                      {
+                        borderColor: C.violet,
+                        fontSize: 22,
+                        fontWeight: "600",
+                        minHeight: 80,
+                      },
+                    ]}
+                  />
+                  <View style={ui.row}>
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        label="Save title"
+                        icon="check"
+                        onPress={saveTitle}
+                        busy={busy}
+                        disabled={!titleDraft.trim()}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        label="Cancel"
+                        secondary
+                        onPress={() => {
+                          setTitleDraft(title);
+                          setEditingTitle(false);
+                        }}
+                        disabled={busy}
+                      />
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <Text style={[ui.title, { fontSize: 28 }]}>{title}</Text>
+              )}
+            </View>
             <Text style={ui.caption}>
               Created {new Date(note.created_at).toLocaleString()}
             </Text>
@@ -238,9 +330,10 @@ export default function NoteEditor() {
               )
             )}
             <View style={{ gap: 12 }}>
-              <Text style={ui.heading}>The thought behind it</Text>
+              <Text style={ui.heading}>Note description</Text>
               <TextInput
                 accessibilityLabel="Note text"
+                editable={!busy}
                 value={body}
                 onChangeText={(value) => {
                   setBody(value);
@@ -291,6 +384,7 @@ export default function NoteEditor() {
               <Text style={ui.heading}>Tags</Text>
               <TextInput
                 accessibilityLabel="Tags, separated by commas"
+                editable={!busy}
                 value={tags}
                 onChangeText={(value) => {
                   setTags(value);
@@ -307,7 +401,9 @@ export default function NoteEditor() {
               </Text>
             </View>
             <Button
-              label={dirty ? "Save note" : "Saved on this device"}
+              label={
+                dirty || editingTitle ? "Save note" : "Saved on this device"
+              }
               icon="check"
               onPress={persist}
               busy={busy}

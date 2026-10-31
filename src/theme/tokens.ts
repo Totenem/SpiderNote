@@ -9,6 +9,7 @@ export const C = {
   white: "#FFFFFF",
   muted: "#716C80",
   line: "#E9E5EF",
+  inputBorder: "#8D7E9F",
   mint: "#25765F",
   mintPale: "#E7F3ED",
   coral: "#BD394A",
@@ -48,8 +49,8 @@ export const ui = StyleSheet.create({
     gap: 12,
   },
   input: {
-    borderWidth: 1,
-    borderColor: C.line,
+    borderWidth: 1.5,
+    borderColor: C.inputBorder,
     borderRadius: 14,
     padding: 14,
     backgroundColor: C.white,

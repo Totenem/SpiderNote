@@ -1,5 +1,13 @@
 import { useCallback, useState } from "react";
-import { Alert, Modal, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Modal,
+  Platform,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { useSQLiteContext } from "expo-sqlite";
@@ -21,8 +29,10 @@ import {
   Screen,
 } from "@/components/kit";
 import { C, ui } from "@/theme/tokens";
+import { useImmersiveNavigation } from "@/components/AppNavigationBar";
 import { bytesLabel, errorMessage } from "@/utils/format";
 export default function Settings() {
+  const immersive = useImmersiveNavigation();
   const db = useSQLiteContext();
   const [books, setBooks] = useState<Notebook[]>([]);
   const [count, setCount] = useState(0);
@@ -237,6 +247,30 @@ export default function Settings() {
           </View>
         ))}
       </View>
+      {Platform.OS === "android" && (
+        <View style={ui.card}>
+          <View style={ui.between}>
+            <Text style={[ui.heading, { flex: 1 }]}>
+              Hide phone navigation bar
+            </Text>
+            <Switch
+              accessibilityLabel="Hide phone navigation bar"
+              value={immersive.hidden}
+              trackColor={{ true: C.violet, false: C.inputBorder }}
+              onValueChange={(value) =>
+                immersive
+                  .update(value)
+                  .catch((error) => setError(errorMessage(error)))
+              }
+            />
+          </View>
+          <Text style={ui.body}>
+            More room for your notes. Swipe from the bottom edge to reveal the
+            phone controls. Android may also show them while the keyboard or a
+            system dialog is open.
+          </Text>
+        </View>
+      )}
       <Text style={ui.heading}>On this device</Text>
       <View style={ui.card}>
         <View style={ui.between}>

@@ -42,7 +42,11 @@
       ],
       "expo-sqlite",
       "expo-sharing",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-navigation-bar",
+        { "hidden": true, "style": "light", "enforceContrast": false }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

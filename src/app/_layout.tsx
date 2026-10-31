@@ -9,6 +9,7 @@ import { migrate } from "@/db/repository";
 import { cleanDeletedNotes, reconcileRecordings } from "@/services/recovery";
 import { localFiles } from "@/services/files";
 import { Button } from "@/components/kit";
+import { AppNavigationBar } from "@/components/AppNavigationBar";
 import { C, ui } from "@/theme/tokens";
 
 async function initialize(db: SQLiteDatabase) {
@@ -34,16 +35,18 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <SQLiteProvider databaseName="spidernote.db" onInit={initialize}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: C.paper },
-          }}
-        >
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="record" options={{ gestureEnabled: false }} />
-          <Stack.Screen name="note/[id]" />
-        </Stack>
+        <AppNavigationBar>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: C.paper },
+            }}
+          >
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="record" options={{ gestureEnabled: false }} />
+            <Stack.Screen name="note/[id]" />
+          </Stack>
+        </AppNavigationBar>
       </SQLiteProvider>
     </SafeAreaProvider>
   );

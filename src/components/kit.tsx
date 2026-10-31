@@ -10,7 +10,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { router } from "expo-router";
 import { C, ui } from "@/theme/tokens";
@@ -206,11 +209,15 @@ export function Screen({
   scroll = true,
   style,
 }: PropsWithChildren<{ scroll?: boolean; style?: StyleProp<ViewStyle> }>) {
+  const insets = useSafeAreaInsets();
   return (
     <SafeAreaView style={[ui.page, style]} edges={["top", "left", "right"]}>
       {scroll ? (
         <ScrollView
-          contentContainerStyle={ui.content}
+          contentContainerStyle={[
+            ui.content,
+            { paddingBottom: Math.max(28, insets.bottom + 20) },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           {children}

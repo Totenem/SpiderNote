@@ -14,7 +14,6 @@ import {
   Chip,
   Empty,
   Icon,
-  IconButton,
   Notice,
   Screen,
 } from "@/components/kit";
@@ -51,11 +50,6 @@ export default function Library() {
                   spidernote<Text style={{ color: C.violet }}>.</Text>
                 </Text>
               </View>
-              <IconButton
-                name="search"
-                label="Search notes"
-                onPress={() => router.navigate("/search")}
-              />
             </View>
             <View style={{ gap: 6 }}>
               <Text style={ui.eyebrow}>
