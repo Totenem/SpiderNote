@@ -22,3 +22,37 @@ CREATE INDEX recordings_note_id ON recordings(note_id);
 CREATE INDEX note_tags_tag_id ON note_tags(tag_id);
 PRAGMA user_version = 1;
 `;
+
+export const schemaV2 = `
+CREATE TABLE transcripts (
+  note_id TEXT PRIMARY KEY NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  content TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, segments_json TEXT NOT NULL DEFAULT '[]',
+  language TEXT NOT NULL DEFAULT 'auto', model_id TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE ai_jobs (
+  id TEXT PRIMARY KEY NOT NULL, note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('running','succeeded','failed','cancelled','interrupted')),
+  source_revision INTEGER, format TEXT, error_message TEXT, metrics_json TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE ai_drafts (
+  id TEXT PRIMARY KEY NOT NULL, note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  source_revision INTEGER NOT NULL, format TEXT NOT NULL, content TEXT NOT NULL,
+  facts_json TEXT NOT NULL, model_id TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE note_revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  body TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE benchmark_runs (id TEXT PRIMARY KEY NOT NULL, report_json TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX ai_jobs_note ON ai_jobs(note_id,created_at DESC);
+CREATE INDEX ai_drafts_note ON ai_drafts(note_id,created_at DESC);
+DROP TRIGGER IF EXISTS search_note_insert;
+DROP TRIGGER IF EXISTS search_note_update;
+DROP TRIGGER IF EXISTS search_note_delete;
+DROP TRIGGER IF EXISTS search_tag_insert;
+DROP TRIGGER IF EXISTS search_tag_delete;
+DROP TRIGGER IF EXISTS search_tag_rename;
+DROP TABLE IF EXISTS note_search;
+PRAGMA user_version=2;
+`;

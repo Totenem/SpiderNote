@@ -21,7 +21,7 @@ export async function initializeSearch(db: SQLiteDatabase) {
         CREATE TRIGGER IF NOT EXISTS search_note_update AFTER UPDATE ON notes BEGIN
           DELETE FROM note_search WHERE rowid=old.rowid;
           INSERT INTO note_search(rowid,note_id,title,body,tags)
-            SELECT new.rowid,new.id,new.title,new.body,COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=new.id),'')
+            SELECT new.rowid,new.id,new.title,new.body || ' ' || COALESCE((SELECT content FROM transcripts WHERE note_id=new.id),''),COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=new.id),'')
             WHERE new.deleted_at IS NULL;
         END;
         CREATE TRIGGER IF NOT EXISTS search_note_delete AFTER DELETE ON notes BEGIN
@@ -37,10 +37,19 @@ export async function initializeSearch(db: SQLiteDatabase) {
           UPDATE note_search SET tags=COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=note_search.note_id),'')
             WHERE note_id IN (SELECT note_id FROM note_tags WHERE tag_id=new.id);
         END;
+        CREATE TRIGGER IF NOT EXISTS search_transcript_insert AFTER INSERT ON transcripts BEGIN
+          UPDATE notes SET updated_at=updated_at WHERE id=new.note_id;
+        END;
+        CREATE TRIGGER IF NOT EXISTS search_transcript_update AFTER UPDATE ON transcripts BEGIN
+          UPDATE notes SET updated_at=updated_at WHERE id=new.note_id;
+        END;
+        CREATE TRIGGER IF NOT EXISTS search_transcript_delete AFTER DELETE ON transcripts BEGIN
+          UPDATE notes SET updated_at=updated_at WHERE id=old.note_id;
+        END;
       `);
       if (!existing)
         await tx.execAsync(`INSERT INTO note_search(rowid,note_id,title,body,tags)
-        SELECT n.rowid,n.id,n.title,n.body,COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=n.id),'')
+        SELECT n.rowid,n.id,n.title,n.body || ' ' || COALESCE((SELECT content FROM transcripts WHERE note_id=n.id),''),COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=n.id),'')
         FROM notes n WHERE n.deleted_at IS NULL;`);
     });
     indexedConnections.add(db);

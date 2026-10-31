@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { schemaV1 } from "./schema.ts";
+import { schemaV1, schemaV2 } from "./schema.ts";
 import { hasSearchIndex, initializeSearch, prepareSearch } from "./search.ts";
 
 export type RecordingStatus = "recording" | "saved" | "interrupted" | "missing";
@@ -31,7 +31,7 @@ const selectNote = `SELECT n.*, b.name AS notebook_name, r.id AS recording_id, r
  r.duration_ms, r.position_ms, r.status AS recording_status FROM notes n
  LEFT JOIN notebooks b ON b.id=n.notebook_id LEFT JOIN recordings r ON r.note_id=n.id`;
 
-async function transaction(
+export async function transaction(
   db: SQLiteDatabase,
   task: (tx: SQLiteDatabase) => Promise<void>,
 ) {
@@ -50,11 +50,15 @@ export async function migrate(db: SQLiteDatabase) {
   const version = await db.getFirstAsync<{ user_version: number }>(
     "PRAGMA user_version",
   );
-  if ((version?.user_version ?? 0) > 1)
+  if ((version?.user_version ?? 0) > 2)
     throw new Error("This database needs a newer version of SpiderNote.");
   if (!version?.user_version)
     await transaction(db, async (tx) => {
       await tx.execAsync(schemaV1);
+    });
+  if ((version?.user_version ?? 0) < 2)
+    await transaction(db, async (tx) => {
+      await tx.execAsync(schemaV2);
     });
   await initializeSearch(db);
 }
@@ -90,12 +94,13 @@ export function listNotes(
   const matches = terms
     .map(
       () => `(n.title LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\'
-    OR EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE nt.note_id=n.id AND t.name LIKE ? ESCAPE '\\'))`,
+    OR EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON t.id=nt.tag_id WHERE nt.note_id=n.id AND t.name LIKE ? ESCAPE '\\')
+    OR EXISTS (SELECT 1 FROM transcripts tr WHERE tr.note_id=n.id AND tr.content LIKE ? ESCAPE '\\'))`,
     )
     .join(" AND ");
   const needles = terms.flatMap((term) => {
     const escaped = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
-    return [escaped, escaped, escaped];
+    return [escaped, escaped, escaped, escaped];
   });
   return db.getAllAsync<Note>(
     `${selectNote} WHERE ${filterSql} AND ${matches}

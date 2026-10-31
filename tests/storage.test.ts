@@ -8,6 +8,13 @@ import { join } from "node:path";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { schemaV1 } from "../src/db/schema.ts";
 import {
+  acceptDraft,
+  getTranscript,
+  restoreDescription,
+  saveDraft,
+  saveTranscript,
+} from "../src/features/ai/repository.ts";
+import {
   migrate,
   beginRecording,
   createNote,
@@ -54,6 +61,84 @@ function database(path = ":memory:") {
   } as unknown as SQLiteDatabase;
   return { db, raw };
 }
+
+test("AI revisions preserve descriptions, reject stale drafts and index corrected transcripts", async () => {
+  const { db, raw } = database();
+  try {
+    raw.exec(schemaV1);
+    await createNote(db, "ai-note", "Original title");
+    await saveNote(
+      db,
+      "ai-note",
+      "Original title",
+      "My original description",
+      null,
+      [],
+    );
+    await migrate(db);
+    assert.equal(
+      (await getNote(db, "ai-note"))?.body,
+      "My original description",
+    );
+    await saveTranscript(
+      db,
+      "ai-note",
+      "Meeting with Zephyr on Friday",
+      "whisper-base-q8",
+      "en",
+      [],
+      0,
+    );
+    assert.equal((await listNotes(db, "Zephyr"))[0]?.id, "ai-note");
+    await saveDraft(
+      db,
+      "draft-1",
+      "ai-note",
+      1,
+      "recording_summary",
+      "Meeting with Zephyr",
+      [],
+    );
+    await saveTranscript(
+      db,
+      "ai-note",
+      "Meeting with Aurora on Monday",
+      "edited",
+      "en",
+      [],
+      1,
+    );
+    assert.equal((await listNotes(db, "Zephyr")).length, 0);
+    assert.equal((await listNotes(db, "Aurora"))[0]?.id, "ai-note");
+    await assert.rejects(acceptDraft(db, "draft-1"), /older transcript/);
+    await assert.rejects(
+      saveTranscript(db, "ai-note", "stale", "edited", "en", [], 1),
+      /changed/,
+    );
+    assert.equal((await getTranscript(db, "ai-note"))?.revision, 2);
+    await saveDraft(
+      db,
+      "draft-2",
+      "ai-note",
+      2,
+      "recording_summary",
+      "Meeting with Aurora",
+      [],
+    );
+    await acceptDraft(db, "draft-2");
+    assert.equal((await getNote(db, "ai-note"))?.body, "Meeting with Aurora");
+    await restoreDescription(db, "ai-note");
+    assert.equal(
+      (await getNote(db, "ai-note"))?.body,
+      "My original description",
+    );
+    assert.equal((await getNote(db, "ai-note"))?.title, "Original title");
+    await db.runAsync("DELETE FROM notes WHERE id=?", "ai-note");
+    assert.equal(await getTranscript(db, "ai-note"), null);
+  } finally {
+    raw.close();
+  }
+});
 
 test("indexed search backfills existing notes, matches title and description together, and follows edits", async () => {
   const { db, raw } = database();
