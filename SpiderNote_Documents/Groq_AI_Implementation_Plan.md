@@ -1,6 +1,6 @@
 # SpiderNote — next iteration and Groq AI plan
 
-Date: October 31, 2026. Status: implementation proposal for cloud AI; UI fixes implemented separately. No provider calls or credentials are added by this plan. The user's device feedback confirms basic recording/playback works; long-session and interruption checks remain part of beta testing.
+Date: October 31, 2026. Status: superseded by [the local AI implementation](Local_AI_Implementation.md). Retained as historical context. No Groq provider calls or credentials are enabled. The user's device feedback confirms basic recording/playback works; long-session and interruption checks remain part of beta testing.
 
 ## 1. UX corrections before AI
 

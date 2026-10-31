@@ -32,7 +32,21 @@ EAS project: [@totemn/spidernote](https://expo.dev/accounts/totemn/projects/spid
 - Original audio sharing, TXT/Markdown note export, all-written-notes export, confirmed deletion and retryable file cleanup.
 - Privacy onboarding, storage information, editable SVG identity and Android launcher/splash assets.
 
-Android is the supported test target. A browser is not a supported storage/recording target for this milestone. No AI uploads, accounts, subscriptions or paywalls are implemented. The product plan requires audio durability and real-device recovery validation before cloud AI work.
+Android arm64 is the supported target. A browser and Expo Go do not include the native inference modules. No AI uploads, accounts, subscriptions or paywalls are implemented.
+
+## Offline AI beta
+
+Open **Settings → Offline AI models & benchmarks** to download multilingual Whisper Base (~78 MiB) or Tiny (~42 MiB), plus official Qwen3 0.6B Q8 (~610 MiB). Downloads are explicit and checked against pinned SHA-256 hashes. No environment variables or API keys are needed. After downloading, inference works without an internet connection.
+
+Open a note and choose **Offline transcription & AI notes**. Transcribe, correct/save the transcript, then choose meeting minutes, recording summary, casual note, study notes, or action checklist. The small model extracts exact source passages; deterministic layouts organize them. This beta produces extractive drafts, not unrestricted prose summaries. Review before accepting. Accepted drafts preserve the previous description for restoration; the recording and title remain intact. Transcript text is searchable.
+
+Only one AI task/download runs at a time. Processing uses CPU with two threads and loads the speech and note models sequentially. Audio is decoded in private storage into 30-second PCM chunks, with a 30-minute/512 MB input limit. Leaving the app cancels processing. Interrupted jobs can be retried. **4 GB RAM is a target, not a validated support claim.**
+
+The benchmark screen runs prerecorded English speech, silence, and English/Filipino/Taglish text fixtures, with optional existing audio import and a reference transcript. Choose one or three repetitions; export JSON timing, sampled memory, thermal status, model hashes and quality scores. No new recording is needed. Bundled tests do not establish natural Taglish speech accuracy or real meeting quality. Test on a physical target device in airplane mode after downloads.
+
+**Report an AI issue** opens [your Google Form](https://forms.gle/ZgD756Q3yxT45BZUA). The existing form is unchanged; only its section-one workflow is used. No audio, transcript, diagnostics, prefilled answers or new sections are submitted by the app. Users can manually include a benchmark Run ID in their description.
+
+See [local AI implementation and validation](SpiderNote_Documents/Local_AI_Implementation.md) for limitations and device acceptance checks.
 
 ## Verify
 
@@ -49,7 +63,7 @@ The tests execute the real SQL schema and repository queries against Node SQLite
 
 See [Android beta checks](SpiderNote_Documents/Android_Beta_Checks.md) for the device acceptance gate. The SDK 58 toolchain currently has transitive npm advisories; review before public release. Do not apply `npm audit fix --force`, which proposes incompatible Expo downgrades.
 
-The next cloud iteration is specified in [Groq AI implementation plan](SpiderNote_Documents/Groq_AI_Implementation_Plan.md): five note formats, consent, backend credentials, authentication, quota enforcement and prompt-injection defenses. It is a plan, not an enabled AI integration. The Groq key belongs only on the backend; the app will contain the public backend URL. The navigation-bar module requires a fresh native APK before these UI changes can be tested on the installed beta.
+The earlier [Groq plan](SpiderNote_Documents/Groq_AI_Implementation_Plan.md) is superseded by the local pipeline. Install the new native APK to use AI; a JavaScript update alone cannot add the inference modules.
 
 ## Structure
 
