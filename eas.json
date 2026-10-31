@@ -9,6 +9,7 @@
     "preview": {
       "autoIncrement": true,
       "distribution": "internal",
+      "env": { "EAS_USE_CACHE": "1" },
       "android": { "buildType": "apk" }
     },
     "production": { "autoIncrement": true }

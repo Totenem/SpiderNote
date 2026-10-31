@@ -55,6 +55,7 @@
         "llama.rn",
         { "enableOpenCLAndHexagon": false, "enableEntitlements": false }
       ],
+      "./plugins/withLocalAiBuild.js",
       [
         "expo-build-properties",
         {
