@@ -26,6 +26,7 @@ import { deleteNote } from "@/services/recovery";
 import { Button, Icon, IconButton, Notice, Screen } from "@/components/kit";
 import { C, ui } from "@/theme/tokens";
 import { clock, errorMessage } from "@/utils/format";
+import { getAiStatus } from "@/features/ai/status";
 
 type Phase = "idle" | "recording" | "paused" | "interrupted";
 export default function RecorderScreen() {
@@ -70,6 +71,13 @@ export default function RecorderScreen() {
     );
   });
   const start = async () => {
+    if (getAiStatus().busy) {
+      Alert.alert(
+        "AI task in progress",
+        "Finish or cancel the AI task before recording.",
+      );
+      return;
+    }
     if (lock.current || session) return;
     if (Platform.OS === "web") {
       setError("Recording is available in the Android app.");

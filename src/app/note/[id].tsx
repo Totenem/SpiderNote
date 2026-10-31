@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -9,7 +9,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router, useLocalSearchParams, usePreventRemove } from "expo-router";
+import {
+  router,
+  useFocusEffect,
+  useLocalSearchParams,
+  usePreventRemove,
+} from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import {
   getNote,
@@ -79,31 +84,33 @@ export default function NoteEditor() {
       );
     },
   );
-  useEffect(() => {
-    let active = true;
-    Promise.all([getNote(db, id), getTags(db, id), listNotebooks(db)])
-      .then(([value, names, notebooks]) => {
-        if (!active) return;
-        if (!value) throw Error("This note is no longer available.");
-        setNote(value);
-        setTitle(value.title);
-        setTitleDraft(value.title);
-        setBody(value.body);
-        setTags(names.join(", "));
-        setNotebook(value.notebook_id);
-        setBooks(notebooks);
-        setLoaded(true);
-      })
-      .catch((error) => {
-        if (active) {
-          setError(errorMessage(error));
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      Promise.all([getNote(db, id), getTags(db, id), listNotebooks(db)])
+        .then(([value, names, notebooks]) => {
+          if (!active) return;
+          if (!value) throw Error("This note is no longer available.");
+          setNote(value);
+          setTitle(value.title);
+          setTitleDraft(value.title);
+          setBody(value.body);
+          setTags(names.join(", "));
+          setNotebook(value.notebook_id);
+          setBooks(notebooks);
           setLoaded(true);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [db, id]);
+        })
+        .catch((error) => {
+          if (active) {
+            setError(errorMessage(error));
+            setLoaded(true);
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }, [db, id]),
+  );
   async function persist() {
     if (lock.current || !note) return false;
     lock.current = true;
@@ -330,6 +337,17 @@ export default function NoteEditor() {
               )
             )}
             <View style={{ gap: 12 }}>
+              <Button
+                label="Offline transcription & AI notes"
+                secondary
+                disabled={busy}
+                onPress={async () => {
+                  if (await persist()) {
+                    disablePrevention();
+                    router.push({ pathname: "/ai/[id]", params: { id } });
+                  }
+                }}
+              />
               <Text style={ui.heading}>Note description</Text>
               <TextInput
                 accessibilityLabel="Note text"
@@ -431,8 +449,8 @@ export default function NoteEditor() {
             <Text
               style={[ui.caption, { textAlign: "center", paddingBottom: 20 }]}
             >
-              Cloud transcription and summaries are coming after recording
-              reliability testing.
+              Offline AI drafts need downloaded models. Review every draft
+              before using it.
             </Text>
           </>
         )}

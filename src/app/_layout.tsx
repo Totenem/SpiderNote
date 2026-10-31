@@ -10,10 +10,15 @@ import { cleanDeletedNotes, reconcileRecordings } from "@/services/recovery";
 import { localFiles } from "@/services/files";
 import { Button } from "@/components/kit";
 import { AppNavigationBar } from "@/components/AppNavigationBar";
+import { AiLifecycle } from "@/components/AiLifecycle";
 import { C, ui } from "@/theme/tokens";
 
 async function initialize(db: SQLiteDatabase) {
   await migrate(db);
+  await db.runAsync(
+    "UPDATE ai_jobs SET status='interrupted',error_message='App closed during processing. Retry when ready.',updated_at=? WHERE status='running'",
+    new Date().toISOString(),
+  );
   await cleanDeletedNotes(db, localFiles);
   await reconcileRecordings(db, localFiles);
 }
@@ -36,6 +41,7 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <SQLiteProvider databaseName="spidernote.db" onInit={initialize}>
         <AppNavigationBar>
+          <AiLifecycle />
           <Stack
             screenOptions={{
               headerShown: false,
@@ -45,6 +51,9 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="record" options={{ gestureEnabled: false }} />
             <Stack.Screen name="note/[id]" />
+            <Stack.Screen name="ai/[id]" />
+            <Stack.Screen name="offline-ai" />
+            <Stack.Screen name="benchmark" />
           </Stack>
         </AppNavigationBar>
       </SQLiteProvider>

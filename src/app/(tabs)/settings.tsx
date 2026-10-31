@@ -8,7 +8,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { reportAiIssue } from "@/services/feedback";
 import { randomUUID } from "expo-crypto";
 import Constants from "expo-constants";
 import { useSQLiteContext } from "expo-sqlite";
@@ -273,6 +274,12 @@ export default function Settings() {
         </View>
       )}
       <Text style={ui.heading}>On this device</Text>
+      <Button
+        label="Offline AI models & benchmarks"
+        secondary
+        onPress={() => router.push("/offline-ai")}
+      />
+      <Button label="Report an AI issue" secondary onPress={reportAiIssue} />
       <View style={ui.card}>
         <View style={ui.between}>
           <Text style={ui.body}>Notes in your library</Text>
@@ -308,9 +315,9 @@ export default function Settings() {
           beta
         </Text>
         <Text style={ui.body}>
-          Keep the app open while recording. Cloud transcription and AI
-          summaries will be added after recording and recovery pass real-device
-          tests.
+          Keep the app open while recording or processing AI. Offline
+          transcription and drafts are experimental; model downloads are
+          required. Use the benchmark screen to measure your phone.
         </Text>
         <Text style={ui.caption}>Every thought, connected.</Text>
       </View>
