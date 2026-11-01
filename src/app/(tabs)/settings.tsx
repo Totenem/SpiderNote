@@ -11,14 +11,9 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { reportAiIssue } from "@/services/feedback";
 import { randomUUID } from "expo-crypto";
-import Constants from "expo-constants";
+import { AccountCard } from "@/components/AccountCard";
 import { useSQLiteContext } from "expo-sqlite";
-import {
-  listNotes,
-  listNotebooks,
-  type Notebook,
-  type Recording,
-} from "@/db/repository";
+import { listNotes, listNotebooks, type Notebook } from "@/db/repository";
 import { cleanDeletedNotes } from "@/services/recovery";
 import { exportText, localFiles } from "@/services/files";
 import {
@@ -32,31 +27,23 @@ import {
 } from "@/components/kit";
 import { C, ui } from "@/theme/tokens";
 import { useImmersiveNavigation } from "@/components/AppNavigationBar";
-import { bytesLabel, errorMessage } from "@/utils/format";
+import { errorMessage } from "@/utils/format";
 export default function Settings() {
   const immersive = useImmersiveNavigation();
   const db = useSQLiteContext();
   const [books, setBooks] = useState<Notebook[]>([]);
   const [count, setCount] = useState(0);
-  const [bytes, setBytes] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>();
   const [name, setName] = useState("");
   const load = useCallback(async () => {
-    const [notebooks, notes, recordings] = await Promise.all([
+    const [notebooks, notes] = await Promise.all([
       listNotebooks(db),
       listNotes(db),
-      db.getAllAsync<Recording>("SELECT * FROM recordings"),
     ]);
     setBooks(notebooks);
     setCount(notes.length);
-    setBytes(
-      recordings.reduce(
-        (sum, item) => sum + localFiles.size(item.file_path),
-        0,
-      ),
-    );
   }, [db]);
   useFocusEffect(
     useCallback(() => {
@@ -179,29 +166,39 @@ export default function Settings() {
   return (
     <Screen>
       <View style={[ui.between, { paddingTop: 24 }]}>
-        <View style={{ gap: 8 }}>
-          <Text style={ui.eyebrow}>MAKE YOURSELF AT HOME</Text>
-          <Text style={ui.title}>Your space</Text>
-        </View>
-        <Brand size={44} />
+        <Text style={ui.title}>Settings</Text>
+        <Brand size={38} />
       </View>
       {error && <Notice error>{error}</Notice>}
-      <View
-        style={[
-          ui.card,
-          { backgroundColor: C.midnight, borderColor: C.midnight },
-        ]}
-      >
-        <Icon name="shield" color={C.lavender} size={28} />
-        <Text style={[ui.heading, { color: C.white }]}>
-          Your thoughts stay close.
-        </Text>
-        <Text style={[ui.body, { color: "#C8C2D9" }]}>
-          Recording, playback, writing, and search work offline. No account is
-          needed for your local library. This build does not upload your notes
-          or audio.
-        </Text>
-      </View>
+      <AccountCard />
+      <Text style={ui.heading}>Preferences</Text>
+      {Platform.OS === "android" && (
+        <View style={ui.card}>
+          <View style={ui.between}>
+            <Text style={[ui.heading, { flex: 1 }]}>
+              Hide phone navigation bar
+            </Text>
+            <Switch
+              accessibilityLabel="Hide phone navigation bar"
+              value={immersive.hidden}
+              trackColor={{ true: C.violet, false: C.inputBorder }}
+              onValueChange={(value) =>
+                immersive
+                  .update(value)
+                  .catch((error) => setError(errorMessage(error)))
+              }
+            />
+          </View>
+          <Text style={ui.body}>
+            Swipe up from the bottom edge to reveal phone controls.
+          </Text>
+        </View>
+      )}
+      <Button
+        label="Offline transcription"
+        secondary
+        onPress={() => router.push("/offline-ai")}
+      />
       <View style={ui.between}>
         <Text style={ui.heading}>Notebooks</Text>
         <IconButton
@@ -249,85 +246,26 @@ export default function Settings() {
           </View>
         ))}
       </View>
-      {Platform.OS === "android" && (
-        <View style={ui.card}>
-          <View style={ui.between}>
-            <Text style={[ui.heading, { flex: 1 }]}>
-              Hide phone navigation bar
-            </Text>
-            <Switch
-              accessibilityLabel="Hide phone navigation bar"
-              value={immersive.hidden}
-              trackColor={{ true: C.violet, false: C.inputBorder }}
-              onValueChange={(value) =>
-                immersive
-                  .update(value)
-                  .catch((error) => setError(errorMessage(error)))
-              }
-            />
-          </View>
-          <Text style={ui.body}>
-            More room for your notes. Swipe from the bottom edge to reveal the
-            phone controls. Android may also show them while the keyboard or a
-            system dialog is open.
-          </Text>
-        </View>
-      )}
-      <Text style={ui.heading}>On this device</Text>
+      <Text style={ui.heading}>Your library</Text>
       <Button
-        label="Offline AI models & benchmarks"
+        label="Export written notes"
         secondary
-        onPress={() => router.push("/offline-ai")}
-      />
-      <Button label="Report an AI issue" secondary onPress={reportAiIssue} />
-      <View style={ui.card}>
-        <View style={ui.between}>
-          <Text style={ui.body}>Notes in your library</Text>
-          <Text style={ui.heading}>{count}</Text>
-        </View>
-        <View style={ui.separator} />
-        <View style={ui.between}>
-          <Text style={ui.body}>Recording storage</Text>
-          <Text style={ui.heading}>{bytesLabel(bytes)}</Text>
-        </View>
-        <Text style={ui.caption}>
-          Audio size includes files waiting for confirmed deletion. Text and
-          database overhead are not included.
-        </Text>
-      </View>
-      <Button
-        label="Export all written notes"
         icon="export"
-        secondary
         onPress={exportAll}
         busy={busy}
       />
-      <Notice>
-        Keep a copy of important recordings using Audio export on each note. App
-        storage is not a backup: uninstalling, clearing storage, or losing your
-        device can remove your library. SQLite storage is not encrypted by this
-        app.
-      </Notice>
-      <Text style={ui.heading}>About this build</Text>
-      <View style={ui.card}>
-        <Text style={ui.body}>
-          SpiderNote {Constants.expoConfig?.version ?? "development"} · Android
-          beta
-        </Text>
-        <Text style={ui.body}>
-          Keep the app open while recording or processing AI. Offline
-          transcription and drafts are experimental; model downloads are
-          required. Use the benchmark screen to measure your phone.
-        </Text>
-        <Text style={ui.caption}>Every thought, connected.</Text>
-      </View>
       <Button
-        label="Delete all local notes & audio"
+        label="Delete local notes & audio"
         icon="trash"
         danger
         onPress={deleteAll}
         disabled={busy}
       />
+      <Text style={ui.caption}>
+        Export important notes before clearing storage or uninstalling.
+      </Text>
+      <Text style={ui.heading}>Help</Text>
+      <Button label="Report a problem" secondary onPress={reportAiIssue} />
       <Modal
         visible={editing !== undefined}
         animationType="slide"

@@ -5,18 +5,9 @@ import {
   ScrollView,
   Text,
   View,
-  StyleSheet,
 } from "react-native";
 import { router } from "expo-router";
-import {
-  Brand,
-  Button,
-  Chip,
-  Empty,
-  Icon,
-  Notice,
-  Screen,
-} from "@/components/kit";
+import { Brand, Button, Chip, Empty, Notice, Screen } from "@/components/kit";
 import { NoteCard } from "@/components/NoteCard";
 import { Onboarding } from "@/components/Onboarding";
 import { useNotes } from "@/hooks/use-notes";
@@ -51,22 +42,18 @@ export default function Library() {
                 </Text>
               </View>
             </View>
-            <View style={{ gap: 6 }}>
-              <Text style={ui.eyebrow}>
-                YOUR THOUGHTS, A LITTLE MORE CONNECTED
-              </Text>
-              <Text style={ui.title}>Your web of notes</Text>
-              <Text style={ui.body}>A home for everything on your mind.</Text>
-            </View>
-            <View style={styles.hero}>
-              <View style={styles.heroLine} />
-              <View style={{ gap: 12 }}>
-                <Text style={styles.heroKicker}>MAKE ROOM FOR AN IDEA</Text>
-                <Text style={styles.heroTitle}>
-                  Think out loud.{"\n"}We’ll keep the thread.
-                </Text>
-                <Text style={styles.heroText}>
-                  One tap. Just you and your thoughts.
+            <View
+              style={{
+                backgroundColor: C.pale,
+                borderRadius: 20,
+                padding: 18,
+                gap: 12,
+              }}
+            >
+              <View style={{ gap: 4 }}>
+                <Text style={ui.heading}>A thought worth keeping?</Text>
+                <Text style={ui.caption}>
+                  Record it now. Come back to it later.
                 </Text>
               </View>
               <Button
@@ -74,12 +61,6 @@ export default function Library() {
                 icon="mic"
                 onPress={() => router.push("/record")}
               />
-              <View style={ui.row}>
-                <Icon name="shield" color={C.lavender} size={14} />
-                <Text style={{ color: C.lavender, fontSize: 11 }}>
-                  Saved on your device · Works offline
-                </Text>
-              </View>
             </View>
             <View style={ui.between}>
               <Text style={ui.heading}>
@@ -176,36 +157,3 @@ export default function Library() {
     </Screen>
   );
 }
-const styles = StyleSheet.create({
-  hero: {
-    backgroundColor: C.midnight,
-    borderRadius: 28,
-    padding: 25,
-    gap: 20,
-    overflow: "hidden",
-  },
-  heroKicker: {
-    color: C.lavender,
-    fontSize: 10,
-    letterSpacing: 2,
-    fontWeight: "700",
-  },
-  heroTitle: {
-    color: C.white,
-    fontWeight: "700",
-    fontSize: 29,
-    letterSpacing: -0.8,
-    lineHeight: 36,
-  },
-  heroText: { color: "#C8C2D9", fontSize: 13 },
-  heroLine: {
-    position: "absolute",
-    width: 150,
-    height: 150,
-    borderWidth: 1,
-    borderColor: "#3D315C",
-    borderRadius: 75,
-    right: -65,
-    top: -30,
-  },
-});
