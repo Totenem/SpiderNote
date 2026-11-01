@@ -1,5 +1,15 @@
 # Local AI beta 0.2.0
 
+## Benchmark follow-up: 0.2.1
+
+Report `5613e225-da6d-4fdc-a4ec-18797ef92865` from an Infinix X6886 with 8,060,694,528 bytes reported RAM completed all six clean-English speech runs with zero WER on one 22-word clip. Tiny took 2.56–2.858 s; Base took 5.241–5.759 s after a 74.189 s first run. All six silence cases returned nonempty output. All nine Qwen cases failed JSON parsing. Qwen observed app PSS peaked at 1,785,381,888 bytes. This is an approximately 8 GB phone, so 4 GB support remains unvalidated. The V1 report does not identify the returned silence text or why Qwen JSON failed.
+
+Version 0.2.1 uses llama.rn's pure-content Jinja mode with thinking disabled and validates the answer `content` field instead of raw `text`. A fallback to raw text is allowed only when the content field is absent in an older result shape. Empty content, interrupted/truncated/token-limited completions, malformed JSON and ungrounded passages are rejected. There is no JSON substring salvage or weakened source checking. This addresses an integration mismatch; device inference must be rerun to establish whether it resolves the observed failures.
+
+Audio preparation is unchanged. A bounded PCM scan skips only digital near-silence (sample magnitudes at most one PCM16 unit), before loading Whisper. It is not general voice activity detection; quiet speech/noise/music remain decoder inputs. Known Whisper blank/silence markers are removed from transcript text and segments. V2 benchmarks test silence twice: `silence-5s` bypasses the amplitude gate to exercise decoding/marker handling; `silence-gated-5s` exercises the complete pipeline. A successful gated test alone is not a claim about Whisper's silence robustness.
+
+V2 report diagnostics separate model verification, preparation and model loading; Qwen cases record input/output token counts, content/raw/reasoning character counts, content shape, truncation/stop flags and per-chunk completion time. Transcript text, model output and reasoning are not included. Memory settings and model weights are unchanged so the measured memory concern remains open. Existing V1 reports remain readable; rerun the prerecorded suite on 0.2.1 without making new recordings.
+
 ## Native build follow-up
 
 The first AI preview build (`4a832422-8143-4415-9c17-6e04eee53176`, version code 3) was canceled after exactly 2,700,003 ms (45 minutes) while running R8. No compiler error or APK was reported; this is consistent with the EAS plan timeout. The initial configuration built all llama.rn JNI CPU variants. The Expo config plugin now limits compilation to the generic fallback, ARMv8.2 and ARMv8.2 dot-product variants; the native loader falls back when other variants are absent. High-end i8mm/DSP variants are not included in this build selection. Phone performance must be measured with this selection.
