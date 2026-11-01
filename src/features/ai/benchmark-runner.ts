@@ -13,12 +13,19 @@ import {
   getAiStatus,
   setAiStatus,
 } from "./status";
-import { measureResources, transcribeLocal, extractLocal } from "./runtime";
+import {
+  measureResources,
+  transcribeLocal,
+  extractLocal,
+  type RuntimeDiagnostics,
+} from "./runtime";
+import { NoSpeechError } from "./output";
 import {
   coverage,
   JFK_REFERENCE,
   TEXT_FIXTURES,
   wordErrorRate,
+  words,
 } from "./benchmark";
 import { FORMATS, renderDraft } from "./grounding";
 import { errorMessage } from "@/utils/format";
@@ -32,6 +39,7 @@ export type BenchmarkResult = {
   metrics?: unknown;
   scores?: unknown;
   error?: string;
+  diagnostics?: RuntimeDiagnostics;
 };
 export type BenchmarkReport = {
   id: string;
@@ -88,7 +96,7 @@ export async function runBenchmark(
       ({ id, sha256, bytes }) => ({ id, sha256, bytes }),
     ),
     protocol:
-      "v1: fresh CPU context per case; 2 threads; measured load/verification included; 500 ms PSS samples",
+      "v2: fresh CPU context; 2 threads; separate verification/load/preparation diagnostics; 500 ms PSS; silence-5s bypasses digital-silence gate, silence-gated-5s tests the complete pipeline",
     limitations: [
       "Read English speech, silence and English/Filipino/Taglish text fixtures only. Natural Taglish speech and real meetings are not covered by the bundled pack.",
       "Coverage is literal fact-fragment matching, not a complete factuality or usefulness score.",
@@ -124,6 +132,12 @@ export async function runBenchmark(
         reference: "",
         language: "auto" as const,
       },
+      {
+        id: "silence-gated-5s",
+        uri: silence.uri,
+        reference: "",
+        language: "auto" as const,
+      },
       ...(imported ? [{ id: "imported-audio", ...imported }] : []),
     ];
     for (let iteration = 1; iteration <= repeats; iteration++) {
@@ -136,12 +150,17 @@ export async function runBenchmark(
             progress: 0,
           });
           const measurement = measureResources();
+          let diagnostics: RuntimeDiagnostics = {};
           try {
             const result = await transcribeLocal(
               sample.uri,
               model.id as ModelId,
               sample.language,
               abort.signal,
+              (value) => {
+                diagnostics = value;
+              },
+              sample.id === "silence-5s",
             );
             results.push({
               sampleId: sample.id,
@@ -149,24 +168,25 @@ export async function runBenchmark(
               kind: "transcription",
               iteration,
               status:
-                sample.id === "silence-5s" && result.content.trim()
+                sample.id.startsWith("silence-") && result.content.trim()
                   ? "failed"
                   : "completed",
               metrics: {
                 ...measurement.stop(),
                 audioDurationMs: result.durationMs,
               },
+              diagnostics,
               scores: sample.reference
                 ? wordErrorRate(sample.reference, result.content)
                 : {
-                    recognizedWords: result.content.trim().split(/\s+/).length,
+                    recognizedWords: words(result.content).length,
                     referenceProvided: false,
                   },
             });
           } catch (error) {
             const noSpeech =
-              sample.id === "silence-5s" &&
-              errorMessage(error).startsWith("No speech was recognized");
+              sample.id.startsWith("silence-") &&
+              error instanceof NoSpeechError;
             results.push({
               sampleId: sample.id,
               modelId: model.id,
@@ -174,6 +194,7 @@ export async function runBenchmark(
               iteration,
               status: noSpeech ? "completed" : "failed",
               metrics: measurement.stop(),
+              diagnostics,
               ...(noSpeech
                 ? { scores: { recognizedWords: 0 } }
                 : { error: errorMessage(error) }),
@@ -184,8 +205,15 @@ export async function runBenchmark(
         for (const sample of TEXT_FIXTURES) {
           abort.signal.throwIfAborted();
           const measurement = measureResources();
+          let diagnostics: RuntimeDiagnostics = {};
           try {
-            const facts = await extractLocal(sample.text, abort.signal);
+            const facts = await extractLocal(
+              sample.text,
+              abort.signal,
+              (value) => {
+                diagnostics = value;
+              },
+            );
             const formats = FORMATS.map((format) => ({
               id: format.id,
               nonempty: renderDraft(format.id, facts).length > 0,
@@ -197,6 +225,7 @@ export async function runBenchmark(
               iteration,
               status: "completed",
               metrics: measurement.stop(),
+              diagnostics,
               scores: {
                 ...coverage(sample.facts, facts),
                 formats,
@@ -211,6 +240,7 @@ export async function runBenchmark(
               iteration,
               status: "failed",
               metrics: measurement.stop(),
+              diagnostics,
               error: errorMessage(error),
             });
           }

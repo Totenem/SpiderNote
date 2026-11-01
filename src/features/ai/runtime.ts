@@ -1,16 +1,42 @@
 import { nativeAiSupport } from "../../../modules/local-ai-support";
 import type { MemorySample } from "../../../modules/local-ai-support";
 import type { GroundedFact } from "./grounding";
+import { File, FileMode } from "expo-file-system";
+import {
+  cleanSpeechText,
+  completionFacts,
+  completionDiagnostics,
+  hasAudiblePcm16,
+  NoSpeechError,
+} from "./output";
 import {
   EXTRACTION_PROMPT,
   EXTRACTION_SCHEMA,
   splitTranscript,
-  validateFacts,
 } from "./grounding";
 import { requireModel } from "./models";
 import type { ModelId } from "./catalog";
 import { getAiStatus, setAiStatus } from "./status";
 import type { SpeechContext, SpeechRuntime } from "./speech-types";
+
+export type RuntimeDiagnostics = Record<string, unknown>;
+type DiagnosticsObserver = (value: RuntimeDiagnostics) => void;
+async function isDigitalSilence(uri: string, signal: AbortSignal) {
+  const handle = new File(uri).open(FileMode.ReadOnly);
+  try {
+    // prepareAudio always emits our own 44-byte PCM16 WAV header.
+    await handle.readBytes(44);
+    while (true) {
+      signal.throwIfAborted();
+      const bytes = await handle.readBytes(64 * 1024);
+      if (!bytes.length) return true;
+      if (hasAudiblePcm16(bytes)) return false;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  } finally {
+    handle.close();
+  }
+}
 
 export type InferenceMetrics = {
   elapsedMs: number;
@@ -65,9 +91,18 @@ export async function transcribeLocal(
   speechModel: ModelId,
   language: "auto" | "en" | "tl",
   signal: AbortSignal,
+  observe?: DiagnosticsObserver,
+  bypassSilenceGate = false,
 ) {
+  const diagnostic: RuntimeDiagnostics = {
+    silenceGateBypassed: bypassSilenceGate,
+    skippedSilentChunks: 0,
+    removedMarkerChunks: 0,
+  };
   const support = nativeAiSupport();
+  const verifyStart = Date.now();
   const model = await requireModel(speechModel, signal);
+  diagnostic.verificationMs = Date.now() - verifyStart;
   signal.throwIfAborted();
   setAiStatus({
     ...getAiStatus(),
@@ -79,20 +114,35 @@ export async function transcribeLocal(
   let prepared: Awaited<ReturnType<typeof support.prepareAudio>> | undefined;
   let context: SpeechContext | undefined;
   try {
+    const prepareStart = Date.now();
     prepared = await support.prepareAudio(uri);
+    diagnostic.preparationMs = Date.now() - prepareStart;
+    diagnostic.audioDurationMs = prepared.durationMs;
+    diagnostic.chunkCount = prepared.segments.length;
     signal.throwIfAborted();
+    const audibleSegments = [];
+    for (const segment of prepared.segments) {
+      if (!bypassSilenceGate && (await isDigitalSilence(segment.uri, signal))) {
+        diagnostic.skippedSilentChunks =
+          Number(diagnostic.skippedSilentChunks) + 1;
+      } else audibleSegments.push(segment);
+    }
+    if (!audibleSegments.length) throw new NoSpeechError();
     // Lazy native loading also avoids pulling optional inference into app startup.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { initWhisper } = require("whisper.rn/index") as SpeechRuntime;
+    const loadStart = Date.now();
     context = await initWhisper({
       filePath: model,
       useGpu: false,
       useCoreMLIos: false,
     });
+    diagnostic.modelLoadMs = Date.now() - loadStart;
+    const inferenceStart = Date.now();
     signal.throwIfAborted();
     const segments: { text: string; startMs: number; endMs: number }[] = [];
     const texts: string[] = [];
-    for (const [index, segment] of prepared.segments.entries()) {
+    for (const [index, segment] of audibleSegments.entries()) {
       signal.throwIfAborted();
       const task = context.transcribe(segment.uri, {
         language,
@@ -105,8 +155,8 @@ export async function transcribeLocal(
         onProgress: (value) =>
           setAiStatus({
             ...getAiStatus(),
-            phase: `Transcribing ${index + 1}/${prepared!.segments.length}`,
-            progress: (index + value / 100) / prepared!.segments.length,
+            phase: `Transcribing ${index + 1}/${audibleSegments.length}`,
+            progress: (index + value / 100) / audibleSegments.length,
           }),
       });
       const stop = () => {
@@ -117,23 +167,27 @@ export async function transcribeLocal(
         const result = await task.promise;
         signal.throwIfAborted();
         if (result.isAborted) throw Error("Transcription cancelled.");
-        texts.push(result.result.trim());
+        const clean = cleanSpeechText(result.result);
+        if (!clean && result.result.trim())
+          diagnostic.removedMarkerChunks =
+            Number(diagnostic.removedMarkerChunks) + 1;
+        texts.push(clean);
         segments.push(
-          ...result.segments.map((item) => ({
-            text: item.text,
-            startMs: segment.offsetMs + item.t0 * 10,
-            endMs: segment.offsetMs + item.t1 * 10,
-          })),
+          ...result.segments
+            .map((item) => ({
+              text: cleanSpeechText(item.text),
+              startMs: segment.offsetMs + item.t0 * 10,
+              endMs: segment.offsetMs + item.t1 * 10,
+            }))
+            .filter((item) => item.text.length > 0),
         );
       } finally {
         signal.removeEventListener("abort", stop);
       }
     }
+    diagnostic.inferenceMs = Date.now() - inferenceStart;
     const content = texts.filter(Boolean).join("\n");
-    if (!content)
-      throw Error(
-        "No speech was recognized. The recording has not been changed.",
-      );
+    if (!content) throw new NoSpeechError();
     return { content, segments, durationMs: prepared.durationMs };
   } finally {
     signal.removeEventListener("abort", onAbort);
@@ -141,19 +195,32 @@ export async function transcribeLocal(
       await context?.release();
     } finally {
       if (prepared) support.removePrepared(prepared.directory);
+      observe?.(diagnostic);
     }
   }
 }
-export async function extractLocal(content: string, signal: AbortSignal) {
+export async function extractLocal(
+  content: string,
+  signal: AbortSignal,
+  observe?: DiagnosticsObserver,
+) {
+  const diagnostic: RuntimeDiagnostics = {
+    chunks: [],
+    contextTokens: 2048,
+    threads: 2,
+  };
   const support = nativeAiSupport();
   if (support.getMemoryStats().availableBytes < 768 * 1024 * 1024)
     throw Error(
       "Available memory is low. Close other apps and try again. Your transcript is kept.",
     );
+  const verifyStart = Date.now();
   const model = await requireModel("qwen3-06b-q8", signal);
+  diagnostic.verificationMs = Date.now() - verifyStart;
   signal.throwIfAborted();
   setAiStatus({ ...getAiStatus(), phase: "Loading Qwen on CPU", progress: 0 });
   const { initLlama } = await import("llama.rn");
+  const loadStart = Date.now();
   const context = await initLlama({
     model,
     n_ctx: 2048,
@@ -166,6 +233,7 @@ export async function extractLocal(content: string, signal: AbortSignal) {
     use_mlock: false,
     state_cache_budget_mb: 0,
   });
+  diagnostic.modelLoadMs = Date.now() - loadStart;
   const stop = () => {
     context.stopCompletion().catch(() => {});
   };
@@ -193,12 +261,15 @@ export async function extractLocal(content: string, signal: AbortSignal) {
         phase: `Drafting source passages ${completed + 1}/${completed + queue.length + 1}`,
         progress: completed / (completed + queue.length + 1),
       });
+      const inferenceStart = Date.now();
       const result = await context.completion({
         messages: [
           { role: "system", content: EXTRACTION_PROMPT },
           { role: "user", content: JSON.stringify({ SOURCE_DATA: chunk }) },
         ],
         enable_thinking: false,
+        jinja: true,
+        force_pure_content: true,
         thinking_budget_tokens: 0,
         n_predict: 768,
         temperature: 0,
@@ -209,12 +280,21 @@ export async function extractLocal(content: string, signal: AbortSignal) {
         },
       });
       signal.throwIfAborted();
-      facts.push(...validateFacts(result.text, chunk));
+      (diagnostic.chunks as unknown[]).push({
+        ...completionDiagnostics(result),
+        elapsedMs: Date.now() - inferenceStart,
+        estimatedInputTokens: tokens.tokens.length,
+      });
+      facts.push(...completionFacts(result, chunk));
       completed++;
     }
     return facts;
   } finally {
     signal.removeEventListener("abort", stop);
-    await context.release();
+    try {
+      await context.release();
+    } finally {
+      observe?.(diagnostic);
+    }
   }
 }

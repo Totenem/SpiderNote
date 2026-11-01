@@ -73,7 +73,8 @@ export default function Benchmark() {
         No microphone recording needed. Runs the downloaded speech models
         against a short public English clip and silence, then tests Qwen on
         English, Filipino and Taglish text. Every note format is rendered from
-        the extracted passages.
+        the extracted passages. Silence is tested with and without the
+        digital-silence gate.
       </Text>
       <Notice>
         This smoke suite is not a full quality certification. It does not
@@ -178,6 +179,7 @@ export default function Benchmark() {
                     metrics: result.metrics,
                     scores: result.scores,
                     error: result.error,
+                    diagnostics: result.diagnostics,
                   },
                   null,
                   2,
