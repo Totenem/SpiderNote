@@ -82,9 +82,8 @@ export function Onboarding() {
             </View>
           ))}
           <Text style={ui.caption}>
-            Microphone access is requested only when you start recording. Cloud
-            AI is not enabled in this build. Export important notes and audio:
-            uninstalling the app or clearing its storage can remove them.
+            Recording, transcription, and saved notes work offline. Pro AI
+            generation sends your transcript online only when you choose it.
           </Text>
           <Button
             label="Let’s catch a thought"

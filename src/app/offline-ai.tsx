@@ -6,10 +6,11 @@ import {
   deleteModel,
   downloadModel,
   isModelInstalled,
+  modelFile,
 } from "@/features/ai/models";
 import { useAiStatus } from "@/features/ai/status";
 import { AiProgress } from "@/components/AiProgress";
-import { Button, Header, Notice, Screen } from "@/components/kit";
+import { Button, Header, Screen } from "@/components/kit";
 import { C, ui } from "@/theme/tokens";
 import { bytesLabel, errorMessage } from "@/utils/format";
 import { reportAiIssue } from "@/services/feedback";
@@ -18,19 +19,47 @@ export default function OfflineAi() {
   const status = useAiStatus();
   return (
     <Screen>
-      <Header title="Offline AI" />
-      <Text style={ui.title}>Your thoughts. Your device.</Text>
+      <Header title="Offline transcription" />
+      <Text style={ui.title}>Speech to text, on your phone.</Text>
       <Text style={ui.body}>
-        Download a speech model and Qwen once. Transcription and drafts then run
-        locally without an API key or internet connection.
+        Download a speech model once to transcribe recordings offline.
       </Text>
-      <Notice>
-        Experimental on 4 GB phones. Processing may be slow or inaccurate,
-        especially with Taglish. Keep the app open and review every result. Only
-        one model is loaded at a time.
-      </Notice>
+      <Text style={ui.caption}>
+        Keep SpiderNote open while transcribing. Review the transcript for
+        accuracy.
+      </Text>
       <AiProgress />
-      {MODEL_CATALOG.map((model) => {
+      {modelFile("qwen3-06b-q8").exists && (
+        <Button
+          label="Clear unused download · 610 MB"
+          secondary
+          disabled={status.busy}
+          onPress={() =>
+            Alert.alert(
+              "Clear unused download?",
+              "This removes the retired note-generation model. Your recordings, transcripts and notes stay on this device.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Clear download",
+                  onPress: () => {
+                    try {
+                      deleteModel("qwen3-06b-q8");
+                      router.replace("/offline-ai");
+                    } catch (error) {
+                      Alert.alert(
+                        "Could not clear download",
+                        errorMessage(error),
+                      );
+                    }
+                  },
+                },
+              ],
+            )
+          }
+        />
+      )}
+      {MODEL_CATALOG.filter((model) => model.kind === "speech").map((model) => {
         const installed = isModelInstalled(model.id);
         return (
           <View key={model.id} style={ui.card}>
@@ -101,12 +130,7 @@ export default function OfflineAi() {
           </View>
         );
       })}
-      <Button
-        label="Run automatic benchmark"
-        secondary
-        onPress={() => router.push("/benchmark")}
-        disabled={status.busy}
-      />
+
       <Button label="Report an AI issue" secondary onPress={reportAiIssue} />
       <Text style={ui.caption}>
         Opens your Google Form in the browser. No data is attached

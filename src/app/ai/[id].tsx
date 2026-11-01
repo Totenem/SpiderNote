@@ -21,6 +21,7 @@ import {
   type Job,
   type Transcript,
 } from "@/features/ai/repository";
+import { useAccount } from "@/features/account/provider";
 import { runNoteAi } from "@/features/ai/engine";
 import { useAiStatus } from "@/features/ai/status";
 import { type ModelId } from "@/features/ai/catalog";
@@ -32,6 +33,7 @@ import { errorMessage } from "@/utils/format";
 
 export default function AiNote() {
   useKeepAwake();
+  const account = useAccount();
   const { id } = useLocalSearchParams<{ id: string }>();
   const db = useSQLiteContext();
   const status = useAiStatus();
@@ -86,6 +88,31 @@ export default function AiNote() {
       ],
     ),
   );
+  const confirmCloud = (action: () => void) => {
+    if (!account.signedIn) {
+      Alert.alert(
+        "Sign in for Pro AI",
+        "Recording and transcription remain available offline.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Sign in",
+            onPress: () =>
+              account.signIn().catch((error) => setError(errorMessage(error))),
+          },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      "Generate a draft online?",
+      "Your transcript will be sent to SpiderNote and Groq to generate this draft. Audio stays on your device. Review the result before using it.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Generate", onPress: action },
+      ],
+    );
+  };
   const run = async (transcribe: boolean, generate: boolean) => {
     if (dirty) {
       setError("Save or cancel transcript edits before processing.");
@@ -99,6 +126,7 @@ export default function AiNote() {
         format,
         speechModel,
         language,
+        getToken: account.getToken,
       });
     } catch (error) {
       setError(errorMessage(error));
@@ -165,19 +193,18 @@ export default function AiNote() {
       <Header title="Turn voice into notes" />
       <Text style={ui.title}>Keep the useful threads.</Text>
       <Text style={ui.body}>
-        Offline AI extracts passages from the transcript and organizes them into
-        a draft. It can omit details or classify passages incorrectly. Review
-        the text against the recording.
+        Transcribe offline. Create a polished draft with Pro AI when you’re
+        online.
       </Text>
       <Button
-        label="Manage offline models"
+        label="Offline transcription settings"
         secondary
         onPress={() => router.push("/offline-ai")}
         disabled={status.busy || dirty}
       />
       <AiProgress />
       {error && <Notice error>{error}</Notice>}
-      <Text style={ui.heading}>Note format</Text>
+      <Text style={ui.heading}>Note format · Pro</Text>
       <View style={{ gap: 8 }}>
         {FORMATS.map((item) => (
           <Chip
@@ -222,9 +249,9 @@ export default function AiNote() {
         />
       </ScrollView>
       <Button
-        label="Transcribe & generate draft"
+        label="Transcribe & create Pro draft"
         icon="notes"
-        onPress={() => start(true)}
+        onPress={() => confirmCloud(() => start(true))}
         disabled={status.busy || dirty}
       />
       <Button
@@ -269,8 +296,8 @@ export default function AiNote() {
         </View>
       )}
       <Button
-        label="Generate from saved transcript"
-        onPress={() => run(false, true)}
+        label="Create Pro draft from transcript"
+        onPress={() => confirmCloud(() => run(false, true))}
         disabled={status.busy || dirty || !transcript?.content.trim()}
       />
       <Text style={ui.heading}>Drafts to review</Text>
@@ -328,7 +355,7 @@ export default function AiNote() {
           )
         }
       />
-      <Text style={ui.heading}>Recent processing</Text>
+      <Text style={ui.heading}>Processing history</Text>
       {jobs.map((job) => (
         <View key={job.id} style={ui.card}>
           <Text style={ui.body}>

@@ -12,6 +12,8 @@ export type PreparedAudio = {
   segments: { uri: string; offsetMs: number; durationMs: number }[];
 };
 type Support = {
+  hashModel(uri: string): Promise<string>;
+  cancelHash(): void;
   prepareAudio(uri: string): Promise<PreparedAudio>;
   cancelPrepare(): void;
   removePrepared(directory: string): void;

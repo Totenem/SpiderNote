@@ -16,18 +16,10 @@ import {
 import {
   measureResources,
   transcribeLocal,
-  extractLocal,
   type RuntimeDiagnostics,
 } from "./runtime";
 import { NoSpeechError } from "./output";
-import {
-  coverage,
-  JFK_REFERENCE,
-  TEXT_FIXTURES,
-  wordErrorRate,
-  words,
-} from "./benchmark";
-import { FORMATS, renderDraft } from "./grounding";
+import { JFK_REFERENCE, wordErrorRate, words } from "./benchmark";
 import { errorMessage } from "@/utils/format";
 
 export type BenchmarkResult = {
@@ -112,8 +104,7 @@ export async function runBenchmark(
     const speechModels = MODEL_CATALOG.filter(
       (model) => model.kind === "speech" && isModelInstalled(model.id),
     );
-    const hasNotes = isModelInstalled("qwen3-06b-q8");
-    if (!speechModels.length && !hasNotes)
+    if (!speechModels.length)
       throw Error("Download at least one offline model before benchmarking.");
     const asset = await Asset.fromModule(
       require("../../../assets/benchmark/jfk.wav"),
@@ -198,50 +189,6 @@ export async function runBenchmark(
               ...(noSpeech
                 ? { scores: { recognizedWords: 0 } }
                 : { error: errorMessage(error) }),
-            });
-          }
-        }
-      if (hasNotes)
-        for (const sample of TEXT_FIXTURES) {
-          abort.signal.throwIfAborted();
-          const measurement = measureResources();
-          let diagnostics: RuntimeDiagnostics = {};
-          try {
-            const facts = await extractLocal(
-              sample.text,
-              abort.signal,
-              (value) => {
-                diagnostics = value;
-              },
-            );
-            const formats = FORMATS.map((format) => ({
-              id: format.id,
-              nonempty: renderDraft(format.id, facts).length > 0,
-            }));
-            results.push({
-              sampleId: sample.id,
-              modelId: "qwen3-06b-q8",
-              kind: "note_generation",
-              iteration,
-              status: "completed",
-              metrics: measurement.stop(),
-              diagnostics,
-              scores: {
-                ...coverage(sample.facts, facts),
-                formats,
-                sourceValidated: true,
-              },
-            });
-          } catch (error) {
-            results.push({
-              sampleId: sample.id,
-              modelId: "qwen3-06b-q8",
-              kind: "note_generation",
-              iteration,
-              status: "failed",
-              metrics: measurement.stop(),
-              diagnostics,
-              error: errorMessage(error),
             });
           }
         }

@@ -13,6 +13,8 @@ import android.os.PowerManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.io.RandomAccessFile
 import java.net.URI
 import java.nio.ByteBuffer
@@ -25,10 +27,28 @@ import kotlin.math.*
 class LocalAiSupportModule : Module() {
   private val cancelled = AtomicBoolean(false)
   private val preparing = AtomicBoolean(false)
+  private val hashCancelled = AtomicBoolean(false)
   private val context get() = requireNotNull(appContext.reactContext)
   private fun inside(file: File, root: File) = file.canonicalPath.startsWith(root.canonicalPath + File.separator)
   override fun definition() = ModuleDefinition {
     Name("LocalAiSupport")
+    Function("cancelHash") { hashCancelled.set(true) }
+    AsyncFunction("hashModel") { uri: String ->
+      hashCancelled.set(false)
+      val parsed = URI(uri); require(parsed.scheme == "file") { "Only local models are supported" }
+      val file = File(parsed).canonicalFile
+      require(inside(file, File(context.filesDir, "ai-models"))) { "Invalid model path" }
+      val digest = MessageDigest.getInstance("SHA-256")
+      FileInputStream(file).use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+          check(!hashCancelled.get()) { "Model verification cancelled" }
+          val count = input.read(buffer); if (count < 0) break
+          digest.update(buffer, 0, count)
+        }
+      }
+      digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
     Function("cancelPrepare") { cancelled.set(true) }
     Function("getMemoryStats") {
       val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

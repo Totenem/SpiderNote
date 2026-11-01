@@ -3,7 +3,7 @@
     "name": "SpiderNote",
     "owner": "totemn",
     "slug": "spidernote",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "spidernote",
@@ -51,11 +51,8 @@
           "enforceContrast": false
         }
       ],
-      [
-        "llama.rn",
-        { "enableOpenCLAndHexagon": false, "enableEntitlements": false }
-      ],
-      "./plugins/withLocalAiBuild.js",
+      "@clerk/expo",
+      "expo-secure-store",
       [
         "expo-build-properties",
         {

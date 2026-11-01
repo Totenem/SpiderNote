@@ -71,10 +71,9 @@ export default function Benchmark() {
       <Text style={ui.title}>Same samples. Fair comparison.</Text>
       <Text style={ui.body}>
         No microphone recording needed. Runs the downloaded speech models
-        against a short public English clip and silence, then tests Qwen on
-        English, Filipino and Taglish text. Every note format is rendered from
-        the extracted passages. Silence is tested with and without the
-        digital-silence gate.
+        against a short public English clip and silence. This suite tests
+        offline transcription; it does not call the online AI service. Silence
+        is tested with and without the digital-silence gate.
       </Text>
       <Notice>
         This smoke suite is not a full quality certification. It does not

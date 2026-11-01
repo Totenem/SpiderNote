@@ -88,6 +88,7 @@ export async function saveDraft(
   format: NoteFormat,
   content: string,
   facts: GroundedFact[],
+  model = "openai/gpt-oss-120b",
 ) {
   await transaction(db, async (tx) => {
     const current = await getTranscript(tx, noteId);
@@ -108,7 +109,7 @@ export async function saveDraft(
       format,
       content,
       JSON.stringify(facts),
-      "qwen3-06b-q8/prompt-v1",
+      model,
       new Date().toISOString(),
     );
   });

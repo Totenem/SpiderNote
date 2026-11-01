@@ -338,7 +338,7 @@ export default function NoteEditor() {
             )}
             <View style={{ gap: 12 }}>
               <Button
-                label="Offline transcription & AI notes"
+                label="Transcript & AI notes"
                 secondary
                 disabled={busy}
                 onPress={async () => {
@@ -449,8 +449,7 @@ export default function NoteEditor() {
             <Text
               style={[ui.caption, { textAlign: "center", paddingBottom: 20 }]}
             >
-              Offline AI drafts need downloaded models. Review every draft
-              before using it.
+              Transcription works offline. Pro AI drafts require a connection.
             </Text>
           </>
         )}

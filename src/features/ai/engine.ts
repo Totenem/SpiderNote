@@ -3,8 +3,9 @@ import { randomUUID } from "expo-crypto";
 import { getNote } from "@/db/repository";
 import { audioFile } from "@/services/files";
 import { getTranscript, saveTranscript, saveDraft } from "./repository";
-import { extractLocal, measureResources, transcribeLocal } from "./runtime";
-import { renderDraft, type NoteFormat } from "./grounding";
+import { measureResources, transcribeLocal } from "./runtime";
+import { type NoteFormat } from "./grounding";
+import { generateOnline } from "./cloud-client";
 import {
   acquireAiTask,
   finishAiTask,
@@ -23,10 +24,11 @@ export async function runNoteAi(
     format: NoteFormat;
     speechModel: ModelId;
     language: "auto" | "en" | "tl";
+    getToken?: () => Promise<string | null>;
   },
 ) {
   const abort = new AbortController();
-  acquireAiTask("Starting offline AI", () => abort.abort(), noteId);
+  acquireAiTask("Preparing your note", () => abort.abort(), noteId);
   const id = randomUUID();
   const now = new Date().toISOString();
   let stopMeasurement: ReturnType<typeof measureResources> | undefined;
@@ -67,8 +69,22 @@ export async function runNoteAi(
     if (options.generate) {
       if (!transcript?.content.trim())
         throw Error("Create or edit a transcript before generating a note.");
-      // The speech context is fully released by transcribeLocal before Qwen is initialized.
-      const facts = await extractLocal(transcript.content, abort.signal);
+      const token = await options.getToken?.();
+      if (!token)
+        throw Error(
+          "Sign in to generate an AI note. Your transcript is saved on this device.",
+        );
+      setAiStatus({
+        ...getAiStatus(),
+        phase: "Generating your draft online",
+        progress: 0,
+      });
+      const draft = await generateOnline(
+        transcript.content,
+        options.format,
+        token,
+        abort.signal,
+      );
       abort.signal.throwIfAborted();
       await saveDraft(
         db,
@@ -76,8 +92,9 @@ export async function runNoteAi(
         noteId,
         transcript.revision,
         options.format,
-        renderDraft(options.format, facts),
-        facts,
+        draft.content,
+        draft.facts,
+        draft.model,
       );
     }
     const metrics = stopMeasurement.stop();

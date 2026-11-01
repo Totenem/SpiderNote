@@ -1,4 +1,4 @@
-export const MODEL_CATALOG = [
+const ALL_MODEL_FILES = [
   {
     id: "whisper-tiny-q8",
     kind: "speech",
@@ -35,10 +35,13 @@ export const MODEL_CATALOG = [
       "Official Qwen quantization. Extracts grounded passages into five note formats. Experimental on 4 GB phones.",
   },
 ] as const;
-export type ModelId = (typeof MODEL_CATALOG)[number]["id"];
-export type ModelSpec = (typeof MODEL_CATALOG)[number];
+export const MODEL_CATALOG = ALL_MODEL_FILES.filter(
+  (model) => model.kind === "speech",
+);
+export type ModelId = (typeof ALL_MODEL_FILES)[number]["id"];
+export type ModelSpec = (typeof ALL_MODEL_FILES)[number];
 export function modelSpec(id: string): ModelSpec {
-  const spec = MODEL_CATALOG.find((model) => model.id === id);
+  const spec = ALL_MODEL_FILES.find((model) => model.id === id);
   if (!spec) throw new Error("Unknown offline model.");
   return spec;
 }

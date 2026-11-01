@@ -1,7 +1,6 @@
-import { Directory, File, FileMode, Paths } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import { createDownloadResumable } from "expo-file-system/legacy";
-import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex } from "@noble/hashes/utils.js";
+import { nativeAiSupport } from "../../../modules/local-ai-support";
 import { modelSpec, type ModelId } from "./catalog";
 import {
   acquireAiTask,
@@ -37,27 +36,27 @@ export async function verifyFile(
   expected: string,
   signal: AbortSignal,
 ) {
-  const hash = sha256.create();
-  const handle = file.open(FileMode.ReadOnly);
+  signal.throwIfAborted();
+  const native = nativeAiSupport();
+  const stop = () => native.cancelHash();
+  signal.addEventListener("abort", stop);
+  let actual: string;
   try {
-    while (true) {
-      signal.throwIfAborted();
-      const chunk = await handle.readBytes(1024 * 1024);
-      if (!chunk.length) break;
-      hash.update(chunk);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    actual = await native.hashModel(file.uri);
+    signal.throwIfAborted();
   } finally {
-    handle.close();
+    signal.removeEventListener("abort", stop);
   }
-  if (bytesToHex(hash.digest()) !== expected)
+  if (actual !== expected)
     throw Error(
       "Model verification failed. The file will not be used. Download it again.",
     );
 }
 export async function requireModel(id: ModelId, signal: AbortSignal) {
   if (!isModelInstalled(id))
-    throw Error(`Download ${modelSpec(id).name} in Offline AI first.`);
+    throw Error(
+      `Download ${modelSpec(id).name} in Offline transcription first.`,
+    );
   if (!verified.has(id)) {
     setAiStatus({ ...getAiStatus(), phase: `Verifying ${modelSpec(id).name}` });
     await verifyFile(modelFile(id), modelSpec(id).sha256, signal);
@@ -67,6 +66,10 @@ export async function requireModel(id: ModelId, signal: AbortSignal) {
 }
 export async function downloadModel(id: ModelId) {
   const spec = modelSpec(id);
+  if (spec.kind !== "speech")
+    throw Error(
+      "Local note generation is no longer available. Use Pro AI notes online.",
+    );
   if (isModelInstalled(id) && verified.has(id)) return;
   const abort = new AbortController();
   let task: ReturnType<typeof createDownloadResumable> | undefined;

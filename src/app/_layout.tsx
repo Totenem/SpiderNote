@@ -11,6 +11,7 @@ import { localFiles } from "@/services/files";
 import { Button } from "@/components/kit";
 import { AppNavigationBar } from "@/components/AppNavigationBar";
 import { AiLifecycle } from "@/components/AiLifecycle";
+import { AccountProvider } from "@/features/account/provider";
 import { C, ui } from "@/theme/tokens";
 
 async function initialize(db: SQLiteDatabase) {
@@ -37,26 +38,28 @@ export default function RootLayout() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
   return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <SQLiteProvider databaseName="spidernote.db" onInit={initialize}>
-        <AppNavigationBar>
-          <AiLifecycle />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: C.paper },
-            }}
-          >
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="record" options={{ gestureEnabled: false }} />
-            <Stack.Screen name="note/[id]" />
-            <Stack.Screen name="ai/[id]" />
-            <Stack.Screen name="offline-ai" />
-            <Stack.Screen name="benchmark" />
-          </Stack>
-        </AppNavigationBar>
-      </SQLiteProvider>
-    </SafeAreaProvider>
+    <AccountProvider>
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <SQLiteProvider databaseName="spidernote.db" onInit={initialize}>
+          <AppNavigationBar>
+            <AiLifecycle />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: C.paper },
+              }}
+            >
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="record" options={{ gestureEnabled: false }} />
+              <Stack.Screen name="note/[id]" />
+              <Stack.Screen name="ai/[id]" />
+              <Stack.Screen name="offline-ai" />
+              <Stack.Screen name="benchmark" />
+            </Stack>
+          </AppNavigationBar>
+        </SQLiteProvider>
+      </SafeAreaProvider>
+    </AccountProvider>
   );
 }

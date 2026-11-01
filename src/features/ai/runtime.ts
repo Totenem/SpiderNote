@@ -1,19 +1,7 @@
 import { nativeAiSupport } from "../../../modules/local-ai-support";
 import type { MemorySample } from "../../../modules/local-ai-support";
-import type { GroundedFact } from "./grounding";
 import { File, FileMode } from "expo-file-system";
-import {
-  cleanSpeechText,
-  completionFacts,
-  completionDiagnostics,
-  hasAudiblePcm16,
-  NoSpeechError,
-} from "./output";
-import {
-  EXTRACTION_PROMPT,
-  EXTRACTION_SCHEMA,
-  splitTranscript,
-} from "./grounding";
+import { cleanSpeechText, hasAudiblePcm16, NoSpeechError } from "./output";
 import { requireModel } from "./models";
 import type { ModelId } from "./catalog";
 import { getAiStatus, setAiStatus } from "./status";
@@ -195,105 +183,6 @@ export async function transcribeLocal(
       await context?.release();
     } finally {
       if (prepared) support.removePrepared(prepared.directory);
-      observe?.(diagnostic);
-    }
-  }
-}
-export async function extractLocal(
-  content: string,
-  signal: AbortSignal,
-  observe?: DiagnosticsObserver,
-) {
-  const diagnostic: RuntimeDiagnostics = {
-    chunks: [],
-    contextTokens: 2048,
-    threads: 2,
-  };
-  const support = nativeAiSupport();
-  if (support.getMemoryStats().availableBytes < 768 * 1024 * 1024)
-    throw Error(
-      "Available memory is low. Close other apps and try again. Your transcript is kept.",
-    );
-  const verifyStart = Date.now();
-  const model = await requireModel("qwen3-06b-q8", signal);
-  diagnostic.verificationMs = Date.now() - verifyStart;
-  signal.throwIfAborted();
-  setAiStatus({ ...getAiStatus(), phase: "Loading Qwen on CPU", progress: 0 });
-  const { initLlama } = await import("llama.rn");
-  const loadStart = Date.now();
-  const context = await initLlama({
-    model,
-    n_ctx: 2048,
-    n_parallel: 1,
-    n_batch: 64,
-    n_ubatch: 64,
-    n_threads: 2,
-    n_gpu_layers: 0,
-    use_mmap: true,
-    use_mlock: false,
-    state_cache_budget_mb: 0,
-  });
-  diagnostic.modelLoadMs = Date.now() - loadStart;
-  const stop = () => {
-    context.stopCompletion().catch(() => {});
-  };
-  signal.addEventListener("abort", stop);
-  try {
-    const queue = splitTranscript(content);
-    const facts: GroundedFact[] = [];
-    let completed = 0;
-    while (queue.length) {
-      signal.throwIfAborted();
-      const chunk = queue.shift()!;
-      const tokens = await context.tokenize(EXTRACTION_PROMPT + chunk);
-      if (tokens.tokens.length > 1000) {
-        if (chunk.length < 200)
-          throw Error(
-            "This text cannot fit the small-model context. Shorten the transcript.",
-          );
-        queue.unshift(...splitTranscript(chunk, Math.floor(chunk.length / 2)));
-        continue;
-      }
-      if (completed + queue.length > 100)
-        throw Error("The transcript is too long for this phone preset.");
-      setAiStatus({
-        ...getAiStatus(),
-        phase: `Drafting source passages ${completed + 1}/${completed + queue.length + 1}`,
-        progress: completed / (completed + queue.length + 1),
-      });
-      const inferenceStart = Date.now();
-      const result = await context.completion({
-        messages: [
-          { role: "system", content: EXTRACTION_PROMPT },
-          { role: "user", content: JSON.stringify({ SOURCE_DATA: chunk }) },
-        ],
-        enable_thinking: false,
-        jinja: true,
-        force_pure_content: true,
-        thinking_budget_tokens: 0,
-        n_predict: 768,
-        temperature: 0,
-        seed: 42,
-        response_format: {
-          type: "json_schema",
-          json_schema: { strict: true, schema: EXTRACTION_SCHEMA },
-        },
-      });
-      signal.throwIfAborted();
-      (diagnostic.chunks as unknown[]).push({
-        ...completionDiagnostics(result),
-        elapsedMs: Date.now() - inferenceStart,
-        estimatedInputTokens: tokens.tokens.length,
-      });
-      facts.push(...completionFacts(result, chunk));
-      completed++;
-    }
-    return facts;
-  } finally {
-    signal.removeEventListener("abort", stop);
-    try {
-      await context.release();
-    } finally {
       observe?.(diagnostic);
     }
   }
