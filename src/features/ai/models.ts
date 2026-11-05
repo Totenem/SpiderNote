@@ -1,145 +1,42 @@
-import { Directory, File, Paths } from "expo-file-system";
-import { createDownloadResumable } from "expo-file-system/legacy";
+import { File, Directory, Paths } from "expo-file-system";
 import { nativeAiSupport } from "../../../modules/local-ai-support";
 import { modelSpec, type ModelId } from "./catalog";
-import {
-  acquireAiTask,
-  finishAiTask,
-  getAiStatus,
-  setAiStatus,
-} from "./status";
-import { errorMessage } from "@/utils/format";
-
+import { getAiStatus, setAiStatus } from "./status";
 const verified = new Set<ModelId>();
-const directory = () => {
-  const dir = new Directory(Paths.document, "ai-models");
-  dir.create({ idempotent: true, intermediates: true });
-  return dir;
-};
-export const modelFile = (id: ModelId) =>
-  new File(directory(), modelSpec(id).file);
-const marker = (id: ModelId) =>
-  new File(directory(), `${modelSpec(id).file}.verified.json`);
-export function isModelInstalled(id: ModelId) {
-  const file = modelFile(id);
-  const receipt = marker(id);
-  if (!file.exists || file.size !== modelSpec(id).bytes || !receipt.exists)
-    return false;
-  try {
-    return JSON.parse(receipt.textSync()).sha256 === modelSpec(id).sha256;
-  } catch {
-    return false;
-  }
-}
-export async function verifyFile(
-  file: File,
-  expected: string,
-  signal: AbortSignal,
-) {
-  signal.throwIfAborted();
-  const native = nativeAiSupport();
-  const stop = () => native.cancelHash();
-  signal.addEventListener("abort", stop);
-  let actual: string;
-  try {
-    actual = await native.hashModel(file.uri);
-    signal.throwIfAborted();
-  } finally {
-    signal.removeEventListener("abort", stop);
-  }
-  if (actual !== expected)
-    throw Error(
-      "Model verification failed. The file will not be used. Download it again.",
-    );
-}
 export async function requireModel(id: ModelId, signal: AbortSignal) {
-  if (!isModelInstalled(id))
-    throw Error(
-      `Download ${modelSpec(id).name} in Offline transcription first.`,
-    );
-  if (!verified.has(id)) {
-    setAiStatus({ ...getAiStatus(), phase: `Verifying ${modelSpec(id).name}` });
-    await verifyFile(modelFile(id), modelSpec(id).sha256, signal);
-    verified.add(id);
-  }
-  return modelFile(id).uri;
-}
-export async function downloadModel(id: ModelId) {
+  signal.throwIfAborted();
   const spec = modelSpec(id);
-  if (spec.kind !== "speech")
-    throw Error(
-      "Local note generation is no longer available. Use Pro AI notes online.",
-    );
-  if (isModelInstalled(id) && verified.has(id)) return;
-  const abort = new AbortController();
-  let task: ReturnType<typeof createDownloadResumable> | undefined;
-  acquireAiTask(`Downloading ${spec.name}`, () => {
-    abort.abort();
-    task?.cancelAsync().catch(() => {});
-  });
-  const partial = new File(directory(), `${spec.file}.part`);
-  try {
-    if (partial.exists) partial.delete();
+  const directory = new Directory(Paths.document, "ai-models");
+  directory.create({ idempotent: true, intermediates: true });
+  const file = new File(directory, spec.file);
+  const support = nativeAiSupport();
+  if (file.exists && file.size !== spec.bytes) file.delete();
+  if (!file.exists) {
     if (Paths.availableDiskSpace < spec.bytes + 128 * 1024 * 1024)
       throw Error(
-        "Not enough free storage for this model and temporary audio.",
+        "Not enough free storage to prepare the bundled model. Free space and retry.",
       );
-    task = createDownloadResumable(spec.url, partial.uri, {}, (progress) => {
-      if (progress.totalBytesWritten > spec.bytes + 1024) {
-        abort.abort();
-        task?.cancelAsync().catch(() => {});
-      }
-      setAiStatus({
-        ...getAiStatus(),
-        phase: `Downloading ${spec.name}`,
-        progress: Math.min(
-          0.95,
-          (progress.totalBytesWritten / spec.bytes) * 0.95,
-        ),
-      });
-    });
-    const result = await task.downloadAsync();
-    abort.signal.throwIfAborted();
-    if (
-      !result ||
-      result.status !== 200 ||
-      !partial.exists ||
-      partial.size !== spec.bytes
-    )
-      throw Error("The download was incomplete. Retry when connected.");
-    setAiStatus({
-      ...getAiStatus(),
-      phase: "Verifying model SHA-256",
-      progress: 0.97,
-    });
-    await verifyFile(partial, spec.sha256, abort.signal);
-    abort.signal.throwIfAborted();
-    const destination = modelFile(id);
-    if (destination.exists) destination.delete();
-    partial.move(destination);
-    marker(id).write(
-      JSON.stringify({ sha256: spec.sha256, bytes: spec.bytes }),
-    );
-    verified.add(id);
-    finishAiTask();
-  } catch (error) {
-    if (partial.exists) partial.delete();
-    finishAiTask(
-      abort.signal.aborted
-        ? "Download cancelled. You can retry later."
-        : errorMessage(error),
-    );
-    throw error;
+    setAiStatus({ ...getAiStatus(), phase: "Preparing " + spec.name });
+    await support.provisionModel(spec.file);
   }
-}
-export function deleteModel(id: ModelId) {
-  if (getAiStatus().busy)
-    throw Error(
-      "Finish or cancel the current AI task before removing a model.",
-    );
-  const file = modelFile(id);
-  const receipt = marker(id);
-  if (file.exists) file.delete();
-  if (receipt.exists) receipt.delete();
-  verified.delete(id);
+  signal.throwIfAborted();
+  if (!verified.has(id)) {
+    setAiStatus({ ...getAiStatus(), phase: "Verifying " + spec.name });
+    const stop = () => support.cancelHash();
+    signal.addEventListener("abort", stop);
+    try {
+      const hash = await support.hashModel(file.uri);
+      signal.throwIfAborted();
+      if (file.size !== spec.bytes || hash !== spec.sha256) {
+        file.delete();
+        throw Error(
+          "Bundled model verification failed. Retry to restore it from the app.",
+        );
+      }
+      verified.add(id);
+    } finally {
+      signal.removeEventListener("abort", stop);
+    }
+  }
+  return file.uri;
 }

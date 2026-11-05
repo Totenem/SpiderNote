@@ -30,13 +30,6 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="capture"
-        options={{
-          title: "Recordings",
-          tabBarIcon: ({ color }) => <Icon name="mic" color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="search"
         options={{
           title: "Search",

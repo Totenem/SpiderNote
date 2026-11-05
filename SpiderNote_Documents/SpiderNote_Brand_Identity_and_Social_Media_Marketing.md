@@ -23,7 +23,7 @@ Become the trusted personal home for spoken thoughts and connected ideas.
 - **Reliability:** Recording must work first; AI is an enhancement, not a dependency.
 - **Clarity:** Turn messy spoken thoughts into understandable, actionable notes.
 - **Calm:** No intrusive ads or attention-grabbing interruptions while recording.
-- **Honesty:** Be explicit about which features work offline and when cloud processing is used.
+- **Honesty:** Explain that writing, transcription and note structuring run on-device with bundled models.
 
 ### Target audiences
 | Audience | Core job | Key message | Content angle |

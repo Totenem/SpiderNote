@@ -10,13 +10,14 @@ import {
 import { errorMessage } from "@/utils/format";
 export function useNotes(query = "", filter = "all", notebook?: string) {
   const db = useSQLiteContext();
+  const [revision, setRevision] = useState(0);
   const [notes, setNotes] = useState<Note[]>([]);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   useFocusEffect(
     useCallback(() => {
-      let active = true;
+      let active = revision >= 0;
       listNotes(db, query, filter, notebook)
         .then((items) => {
           if (active) {
@@ -34,11 +35,11 @@ export function useNotes(query = "", filter = "all", notebook?: string) {
       return () => {
         active = false;
       };
-    }, [db, query, filter, notebook]),
+    }, [db, query, filter, notebook, revision]),
   );
   useFocusEffect(
     useCallback(() => {
-      let active = true;
+      let active = revision >= 0;
       listNotebooks(db)
         .then((books) => {
           if (active) setNotebooks(books);
@@ -49,7 +50,13 @@ export function useNotes(query = "", filter = "all", notebook?: string) {
       return () => {
         active = false;
       };
-    }, [db]),
+    }, [db, revision]),
   );
-  return { notes, notebooks, error, loading };
+  return {
+    notes,
+    notebooks,
+    error,
+    loading,
+    refresh: () => setRevision((value) => value + 1),
+  };
 }

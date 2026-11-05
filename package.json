@@ -3,15 +3,12 @@
   "version": "0.3.0",
   "main": "expo-router/entry",
   "dependencies": {
-    "@clerk/backend": "^3.26.5",
-    "@clerk/expo": "^4.14.5",
     "@expo/ui": "~58.0.26",
     "@react-native-community/slider": "5.2.1",
     "buffer": "^6.0.3",
     "expo": "~58.0.22",
     "expo-asset": "~58.0.19",
     "expo-audio": "~58.0.11",
-    "expo-auth-session": "~58.0.16",
     "expo-build-properties": "~58.0.12",
     "expo-constants": "~58.0.14",
     "expo-crypto": "~58.0.7",
@@ -26,15 +23,13 @@
     "expo-linking": "~58.0.15",
     "expo-navigation-bar": "~58.0.4",
     "expo-router": "~58.0.29",
-    "expo-secure-store": "~58.0.2",
-    "expo-server": "~58.0.6",
     "expo-sharing": "~58.0.21",
     "expo-splash-screen": "~58.0.12",
     "expo-sqlite": "~58.0.15",
     "expo-status-bar": "~58.0.4",
     "expo-symbols": "~58.0.4",
     "expo-system-ui": "~58.0.7",
-    "expo-web-browser": "~58.0.7",
+    "llama.rn": "0.13.0-rc.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.1",
@@ -44,6 +39,7 @@
     "react-native-screens": "~4.30.0",
     "react-native-svg": "15.16.0",
     "react-native-web": "~0.21.4",
+    "react-native-webview": "14.0.1",
     "react-native-worklets": "0.13.0",
     "whisper.rn": "0.7.4"
   },
@@ -57,17 +53,21 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "backend:export": "expo export --platform web --no-ssg",
     "start": "expo start",
     "brand:generate": "node scripts/generate-brand.cjs",
     "format": "prettier --write src tests scripts/generate-brand.cjs app.json eas.json package.json tsconfig.json",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "models:prepare": "node scripts/prepare-models.cjs",
+    "models:check": "node scripts/prepare-models.cjs --check",
+    "eas-build-post-install": "node scripts/prepare-models.cjs --check"
   },
   "private": true,
-  "allowScripts": {}
+  "allowScripts": {
+    "llama.rn": true
+  }
 }

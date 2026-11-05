@@ -32,6 +32,21 @@ class LocalAiSupportModule : Module() {
   private fun inside(file: File, root: File) = file.canonicalPath.startsWith(root.canonicalPath + File.separator)
   override fun definition() = ModuleDefinition {
     Name("LocalAiSupport")
+    AsyncFunction("provisionModel") { name: String ->
+      require(name.matches(Regex("[a-zA-Z0-9_.-]+"))) { "Invalid model name" }
+      val root = File(context.filesDir, "ai-models"); root.mkdirs()
+      val destination = File(root, name)
+      if (!destination.exists()) {
+        val temporary = File(root, name + ".part")
+        try {
+          context.assets.open("models/" + name).use { source ->
+            temporary.outputStream().use { output -> source.copyTo(output, 64 * 1024) }
+          }
+          check(temporary.renameTo(destination)) { "Could not install bundled model" }
+        } finally { temporary.delete() }
+      }
+      Uri.fromFile(destination).toString()
+    }
     Function("cancelHash") { hashCancelled.set(true) }
     AsyncFunction("hashModel") { uri: String ->
       hashCancelled.set(false)

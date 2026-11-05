@@ -6,7 +6,12 @@ import { mkdtempSync, rmSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SQLiteDatabase } from "expo-sqlite";
-import { schemaV1 } from "../src/db/schema.ts";
+import {
+  saveRichNote,
+  saveStructuredDraft,
+  acceptStructuredDraft,
+} from "../src/features/notes/repository.ts";
+import { schemaV1, schemaV2 } from "../src/db/schema.ts";
 import {
   acceptDraft,
   getTranscript,
@@ -375,6 +380,218 @@ test("confirmed deletion survives file failure and retries without losing metada
       0,
     );
     assert.equal((await db.getAllAsync("SELECT * FROM recordings")).length, 0);
+  } finally {
+    raw.close();
+  }
+});
+
+test("rich notes keep raw text intact, protect source revisions and index structured edits", async () => {
+  const { db, raw } = database();
+  try {
+    await migrate(db);
+    await createNote(db, "rich");
+    await saveRichNote(
+      db,
+      "rich",
+      "Plan",
+      "<h1>Raw idea</h1>",
+      false,
+      null,
+      ["work"],
+      0,
+    );
+    const note = await getNote(db, "rich");
+    assert.equal(note?.raw_revision, 1);
+    assert.equal(note?.body, "Raw idea");
+    await saveStructuredDraft(
+      db,
+      "draft",
+      "rich",
+      1,
+      "recording_summary",
+      "<h2>Organized Zephyr</h2>",
+      "qwen35-08b-q4",
+    );
+    assert.equal((await getNote(db, "rich"))?.structured_html, "");
+    await acceptStructuredDraft(db, "draft");
+    assert.equal((await getNote(db, "rich"))?.body, "Raw idea");
+    assert.equal((await listNotes(db, "Zephyr"))[0]?.id, "rich");
+    await saveRichNote(
+      db,
+      "rich",
+      "Plan",
+      "<p>New Mercury</p>",
+      true,
+      null,
+      [],
+      1,
+    );
+    assert.equal((await listNotes(db, "Mercury"))[0]?.id, "rich");
+    await saveRichNote(
+      db,
+      "rich",
+      "Plan",
+      "<p>Changed raw</p>",
+      false,
+      null,
+      [],
+      1,
+    );
+    assert.equal((await getNote(db, "rich"))?.structured_source_revision, 1);
+    assert.equal((await getNote(db, "rich"))?.raw_revision, 2);
+    await assert.rejects(
+      acceptStructuredDraft(db, "draft"),
+      /raw note changed/,
+    );
+    await assert.rejects(
+      saveStructuredDraft(
+        db,
+        "late",
+        "rich",
+        1,
+        "recording_summary",
+        "<p>Late</p>",
+        "model",
+      ),
+      /raw note changed/,
+    );
+    await assert.rejects(
+      saveRichNote(db, "rich", "Lost", "<p>old</p>", false, null, [], 1),
+      /raw note changed/,
+    );
+    await db.runAsync("DELETE FROM notes WHERE id=?", "rich");
+    assert.equal((await db.getAllAsync("SELECT * FROM ai_drafts")).length, 0);
+  } finally {
+    raw.close();
+  }
+});
+test("v2 migration preserves audio descriptions, transcripts and generated drafts", async () => {
+  const { db, raw } = database();
+  try {
+    raw.exec(schemaV1);
+    raw.exec(schemaV2);
+    await beginRecording(db, "legacy", "Audio/legacy.m4a");
+    await saveNote(db, "legacy", "Legacy", "Existing description", null, []);
+    await saveTranscript(db, "legacy", "Original speech", "whisper-base-q8");
+    await saveDraft(
+      db,
+      "legacy-draft",
+      "legacy",
+      1,
+      "recording_summary",
+      "## Summary\n\n- Original speech",
+      [],
+    );
+    await migrate(db);
+    await migrate(db);
+    const note = await getNote(db, "legacy");
+    assert.equal(note?.body, "Original speech");
+    assert.equal(note?.legacy_body, "Existing description");
+    assert.ok(note?.structured_html.includes("<h2>Summary</h2>"));
+    assert.equal(note?.file_path, "Audio/legacy.m4a");
+    assert.equal((await db.getAllAsync("SELECT * FROM ai_drafts")).length, 1);
+  } finally {
+    raw.close();
+  }
+});
+test("rich metadata failures roll back text, source revisions and tags together", async () => {
+  const { db, raw } = database();
+  try {
+    await migrate(db);
+    await createNote(db, "atomic-rich");
+    await saveRichNote(
+      db,
+      "atomic-rich",
+      "Before",
+      "<p>Safe</p>",
+      false,
+      null,
+      ["keep"],
+      0,
+    );
+    await assert.rejects(
+      saveRichNote(
+        db,
+        "atomic-rich",
+        "After",
+        "<p>Changed</p>",
+        false,
+        "missing-notebook",
+        ["lost"],
+        1,
+      ),
+    );
+    const note = await getNote(db, "atomic-rich");
+    assert.equal(note?.body, "Safe");
+    assert.equal(note?.raw_revision, 1);
+    assert.deepEqual(await getTags(db, "atomic-rich"), ["keep"]);
+  } finally {
+    raw.close();
+  }
+});
+
+test("saving a retry resolves older pending previews and retains the previous structured revision", async () => {
+  const { db, raw } = database();
+  try {
+    await migrate(db);
+    await createNote(db, "retry");
+    await saveRichNote(
+      db,
+      "retry",
+      "Retry",
+      "<p>Raw words</p>",
+      false,
+      null,
+      [],
+      0,
+    );
+    await saveStructuredDraft(
+      db,
+      "first",
+      "retry",
+      1,
+      "recording_summary",
+      "<p>First version</p>",
+      "model",
+    );
+    await acceptStructuredDraft(db, "first");
+    await saveStructuredDraft(
+      db,
+      "second",
+      "retry",
+      1,
+      "recording_summary",
+      "<p>Second version</p>",
+      "model",
+    );
+    await saveStructuredDraft(
+      db,
+      "third",
+      "retry",
+      1,
+      "recording_summary",
+      "<p>Third version</p>",
+      "model",
+    );
+    await acceptStructuredDraft(db, "third");
+    assert.equal(
+      (await getNote(db, "retry"))?.structured_text,
+      "Third version",
+    );
+    assert.equal((await getNote(db, "retry"))?.body, "Raw words");
+    assert.equal(
+      (
+        await db.getAllAsync(
+          "SELECT * FROM ai_drafts WHERE reviewed_at IS NULL",
+        )
+      ).length,
+      0,
+    );
+    const revisions = await db.getAllAsync<{ body: string }>(
+      "SELECT body FROM note_revisions WHERE note_id=?",
+      "retry",
+    );
+    assert.ok(revisions.some((row) => row.body === "<p>First version</p>"));
   } finally {
     raw.close();
   }

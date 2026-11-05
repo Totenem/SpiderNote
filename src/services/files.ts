@@ -1,3 +1,5 @@
+import type { Note } from "@/db/repository";
+import { renderExport } from "@/features/notes/export";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
 import * as Sharing from "expo-sharing";
@@ -6,7 +8,7 @@ import type { FileAccess } from "./recovery";
 export const recordingPath = (id: string) =>
   `${Platform.OS === "ios" ? "ExpoAudio" : "Audio"}/${id}.m4a`;
 export function audioFile(path: string) {
-  if (!/^(Audio|ExpoAudio)\/[a-zA-Z0-9-]+\.m4a$/.test(path))
+  if (!/^(Audio|ExpoAudio)\/[a-zA-Z0-9-]+\.(m4a|aac|mp3|wav)$/.test(path))
     throw new Error("Invalid recording path.");
   return new File(Paths.document, path);
 }
@@ -28,25 +30,19 @@ export function relativeAudioPath(uri: string) {
   audioFile(path);
   return path;
 }
-export async function exportText(
-  id: string,
-  title: string,
-  body: string,
-  markdown: boolean,
-) {
+export async function exportNotes(notes: Note[], html: boolean) {
+  if (!notes.length) throw Error("Create a note before exporting.");
   if (!(await Sharing.isAvailableAsync()))
-    throw new Error("File sharing is unavailable on this device.");
+    throw Error("File sharing is unavailable on this device.");
   const directory = new Directory(Paths.cache, "exports");
   directory.create({ idempotent: true, intermediates: true });
-  const safeTitle =
-    title.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 60) || "note";
   const file = new File(
     directory,
-    `${safeTitle}-${id}.${markdown ? "md" : "txt"}`,
+    "spidernote-" + Date.now() + (html ? ".html" : ".txt"),
   );
-  file.write(`${markdown ? "# " : ""}${title}\n\n${body}\n`);
+  file.write(renderExport(notes, html));
   await Sharing.shareAsync(file.uri, {
-    mimeType: markdown ? "text/markdown" : "text/plain",
-    dialogTitle: "Export your note",
+    mimeType: html ? "text/html" : "text/plain",
+    dialogTitle: "Export written notes",
   });
 }

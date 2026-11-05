@@ -228,15 +228,24 @@ export function Screen({
     </SafeAreaView>
   );
 }
-export function Header({ title, right }: { title: string; right?: ReactNode }) {
+export function Header({
+  title,
+  right,
+  onBack,
+}: {
+  title: string;
+  right?: ReactNode;
+  onBack?: () => void;
+}) {
   return (
     <View style={[ui.between, { paddingTop: 8 }]}>
       <View style={ui.row}>
         <IconButton
           name="back"
           label="Go back"
-          onPress={() =>
-            router.canGoBack() ? router.back() : router.replace("/")
+          onPress={
+            onBack ??
+            (() => (router.canGoBack() ? router.back() : router.replace("/")))
           }
         />
         <Text style={ui.heading}>{title}</Text>

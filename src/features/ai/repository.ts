@@ -88,7 +88,7 @@ export async function saveDraft(
   format: NoteFormat,
   content: string,
   facts: GroundedFact[],
-  model = "openai/gpt-oss-120b",
+  model = "qwen35-08b-q4",
 ) {
   await transaction(db, async (tx) => {
     const current = await getTranscript(tx, noteId);
@@ -102,7 +102,7 @@ export async function saveDraft(
     );
     if (!note) throw Error("The source note was deleted.");
     await tx.runAsync(
-      "INSERT INTO ai_drafts VALUES(?,?,?,?,?,?,?,?)",
+      "INSERT INTO ai_drafts(id,note_id,source_revision,format,content,facts_json,model_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
       id,
       noteId,
       revision,

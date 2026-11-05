@@ -159,7 +159,10 @@ export default function RecorderScreen() {
       );
       setSession(null);
       disablePrevention();
-      router.replace({ pathname: "/note/[id]", params: { id: session } });
+      router.replace({
+        pathname: "/note/[id]",
+        params: { id: session, transcribe: hasAudio ? "1" : "0" },
+      });
     } catch (error) {
       setError(errorMessage(error));
       setPhase("interrupted");

@@ -1,133 +1,124 @@
 import type { SQLiteDatabase } from "expo-sqlite";
+import { AppState, Platform } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { getNote } from "@/db/repository";
+import { getNote, getTags } from "@/db/repository";
 import { audioFile } from "@/services/files";
-import { getTranscript, saveTranscript, saveDraft } from "./repository";
+import { getTranscript, saveTranscript } from "./repository";
+import { saveRichNote, saveStructuredDraft } from "../notes/repository";
+import { plainToHtml } from "../notes/content";
 import { measureResources, transcribeLocal } from "./runtime";
-import { type NoteFormat } from "./grounding";
-import { generateOnline } from "./cloud-client";
-import {
-  acquireAiTask,
-  finishAiTask,
-  getAiStatus,
-  setAiStatus,
-} from "./status";
-import type { ModelId } from "./catalog";
+import { structureLocal } from "./structure";
+import { SPEECH_MODEL, NOTE_MODEL } from "./catalog";
+import type { NoteFormat } from "./grounding";
+import { acquireAiTask, finishAiTask } from "./status";
 import { errorMessage } from "@/utils/format";
 
-export async function runNoteAi(
+export async function runLocalTask(
   db: SQLiteDatabase,
   noteId: string,
-  options: {
-    transcribe: boolean;
-    generate: boolean;
-    format: NoteFormat;
-    speechModel: ModelId;
-    language: "auto" | "en" | "tl";
-    getToken?: () => Promise<string | null>;
-  },
+  kind: "transcription" | "generation",
+  format: NoteFormat = "recording_summary",
 ) {
+  if (Platform.OS !== "android")
+    throw Error(
+      "Offline transcription and structuring require the Android native build. You can still write and edit notes here.",
+    );
+  if (AppState.currentState !== "active")
+    throw Error("Return to SpiderNote before starting offline processing.");
   const abort = new AbortController();
-  acquireAiTask("Preparing your note", () => abort.abort(), noteId);
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  let stopMeasurement: ReturnType<typeof measureResources> | undefined;
+  acquireAiTask(
+    kind === "transcription" ? "Preparing audio" : "Preparing structured note",
+    () => abort.abort(),
+    noteId,
+  );
+  const jobId = randomUUID();
+  const draftId = randomUUID();
+  let measurement: ReturnType<typeof measureResources> | undefined;
   try {
+    const note = await getNote(db, noteId);
+    if (!note) throw Error("This note was deleted.");
+    const now = new Date().toISOString();
     await db.runAsync(
-      "INSERT INTO ai_jobs(id,note_id,kind,status,format,created_at,updated_at) VALUES(?,?,?,'running',?,?,?)",
-      id,
+      "INSERT INTO ai_jobs(id,note_id,kind,status,source_revision,format,created_at,updated_at) VALUES(?,?,?,'running',?,?,?,?)",
+      jobId,
       noteId,
-      options.transcribe ? "transcription" : "generation",
-      options.format,
+      kind,
+      note.raw_revision,
+      format,
       now,
       now,
     );
-    stopMeasurement = measureResources();
-    let transcript = await getTranscript(db, noteId);
-    if (options.transcribe) {
-      const note = await getNote(db, noteId);
-      if (!note?.file_path || note.recording_status === "missing")
-        throw Error("The source recording is not available.");
+    measurement = measureResources();
+    if (kind === "transcription") {
+      if (!note.file_path || note.recording_status === "missing")
+        throw Error("The source audio is unavailable.");
+      const transcript = await getTranscript(db, noteId);
       const result = await transcribeLocal(
         audioFile(note.file_path).uri,
-        options.speechModel,
-        options.language,
+        SPEECH_MODEL,
+        "auto",
         abort.signal,
       );
       abort.signal.throwIfAborted();
+      await saveRichNote(
+        db,
+        noteId,
+        note.title,
+        plainToHtml(result.content),
+        false,
+        note.notebook_id,
+        await getTags(db, noteId),
+        note.raw_revision,
+      );
       await saveTranscript(
         db,
         noteId,
         result.content,
-        options.speechModel,
-        options.language,
+        SPEECH_MODEL,
+        "auto",
         result.segments,
         transcript?.revision ?? 0,
       );
-      transcript = await getTranscript(db, noteId);
-    }
-    if (options.generate) {
-      if (!transcript?.content.trim())
-        throw Error("Create or edit a transcript before generating a note.");
-      const token = await options.getToken?.();
-      if (!token)
-        throw Error(
-          "Sign in to generate an AI note. Your transcript is saved on this device.",
-        );
-      setAiStatus({
-        ...getAiStatus(),
-        phase: "Generating your draft online",
-        progress: 0,
-      });
-      const draft = await generateOnline(
-        transcript.content,
-        options.format,
-        token,
-        abort.signal,
-      );
+    } else {
+      if (!note.body.trim())
+        throw Error("Write or transcribe a raw note first.");
+      const html = await structureLocal(note.body, format, abort.signal);
       abort.signal.throwIfAborted();
-      await saveDraft(
+      await saveStructuredDraft(
         db,
-        randomUUID(),
+        draftId,
         noteId,
-        transcript.revision,
-        options.format,
-        draft.content,
-        draft.facts,
-        draft.model,
+        note.raw_revision,
+        format,
+        html,
+        NOTE_MODEL,
       );
     }
-    const metrics = stopMeasurement.stop();
-    stopMeasurement = undefined;
+    const metrics = measurement.stop();
+    measurement = undefined;
     await db.runAsync(
       "UPDATE ai_jobs SET status='succeeded',metrics_json=?,updated_at=? WHERE id=?",
       JSON.stringify(metrics),
       new Date().toISOString(),
-      id,
+      jobId,
     );
-    finishAiTask();
+    return kind === "generation" ? draftId : undefined;
   } catch (error) {
-    const metrics = stopMeasurement?.stop();
-    stopMeasurement = undefined;
     const message = abort.signal.aborted
-      ? "Processing cancelled. Saved transcripts and source audio were kept."
+      ? "Processing cancelled. Saved notes and audio were kept."
       : errorMessage(error);
     await db
       .runAsync(
-        "UPDATE ai_jobs SET status=?,error_message=?,metrics_json=?,updated_at=? WHERE id=?",
+        "UPDATE ai_jobs SET status=?,error_message=?,updated_at=? WHERE id=?",
         abort.signal.aborted ? "cancelled" : "failed",
-        message.slice(0, 500),
-        metrics ? JSON.stringify(metrics) : null,
+        message,
         new Date().toISOString(),
-        id,
+        jobId,
       )
       .catch(() => {});
-    finishAiTask(message);
-    throw new Error(message);
+    throw Error(message);
   } finally {
-    stopMeasurement?.stop();
-    if (getAiStatus().busy && getAiStatus().noteId === noteId) {
-      setAiStatus({ ...getAiStatus(), busy: false });
-    }
+    measurement?.stop();
+    finishAiTask();
   }
 }

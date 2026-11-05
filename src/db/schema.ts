@@ -56,3 +56,26 @@ DROP TRIGGER IF EXISTS search_tag_rename;
 DROP TABLE IF EXISTS note_search;
 PRAGMA user_version=2;
 `;
+
+export const schemaV3 = `
+ALTER TABLE notes ADD COLUMN raw_html TEXT NOT NULL DEFAULT '';
+ALTER TABLE notes ADD COLUMN raw_revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE notes ADD COLUMN structured_html TEXT NOT NULL DEFAULT '';
+ALTER TABLE notes ADD COLUMN structured_text TEXT NOT NULL DEFAULT '';
+ALTER TABLE notes ADD COLUMN structured_source_revision INTEGER;
+ALTER TABLE notes ADD COLUMN legacy_body TEXT NOT NULL DEFAULT '';
+ALTER TABLE ai_drafts ADD COLUMN rich_html TEXT;
+ALTER TABLE ai_drafts ADD COLUMN raw_source_revision INTEGER;
+ALTER TABLE ai_drafts ADD COLUMN reviewed_at TEXT;
+DROP TRIGGER IF EXISTS search_note_insert;
+DROP TRIGGER IF EXISTS search_note_update;
+DROP TRIGGER IF EXISTS search_note_delete;
+DROP TRIGGER IF EXISTS search_tag_insert;
+DROP TRIGGER IF EXISTS search_tag_delete;
+DROP TRIGGER IF EXISTS search_tag_rename;
+DROP TRIGGER IF EXISTS search_transcript_insert;
+DROP TRIGGER IF EXISTS search_transcript_update;
+DROP TRIGGER IF EXISTS search_transcript_delete;
+DROP TABLE IF EXISTS note_search;
+PRAGMA user_version=3;
+`;

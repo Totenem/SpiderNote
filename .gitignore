@@ -46,3 +46,10 @@ example
 # generated native folders
 /ios
 /android
+
+# Large model assets are prepared locally and included by .easignore
+assets/models/*.bin
+assets/models/*.gguf
+assets/models/*.part
+dist-offline/
+dist-web-offline/

@@ -82,8 +82,8 @@ export function Onboarding() {
             </View>
           ))}
           <Text style={ui.caption}>
-            Recording, transcription, and saved notes work offline. Pro AI
-            generation sends your transcript online only when you choose it.
+            Write, transcribe and structure notes entirely on your Android
+            device. Both models are included. No account or downloads needed.
           </Text>
           <Button
             label="Let’s catch a thought"

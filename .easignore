@@ -11,3 +11,9 @@ credentials.json
 .vscode
 tests
 SpiderNote_Documents
+
+# Keep CNG builds reproducible and omit local verification outputs
+/android
+/ios
+dist-offline
+dist-web-offline

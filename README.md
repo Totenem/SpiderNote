@@ -1,54 +1,33 @@
 # SpiderNote
 
-Every thought, connected. An Android-first Expo SDK 58 app for recording, transcribing and keeping notes offline, with optional Pro AI note generation through Groq.
+An Android-first Expo SDK 58 notebook. Write formatted notes, record voice, or import audio; optionally turn the raw text into a structured version entirely on-device. No account, API keys, backend, model selection, or in-app model download.
 
-## Current workflow — 0.3.0
+## Development
 
-- Recording, playback, Whisper transcription, writing, notebooks/tags, FTS5 search, exports and saved drafts work locally without an account.
-- Pro AI generation uses `openai/gpt-oss-120b` through server-only Expo API routes. Only the selected transcript and format are sent, after confirmation; audio stays local.
-- Clerk hosted sign-in uses secure token storage. The backend verifies sessions and Pro entitlement. A server allowlist grants the developer account Pro; RevenueCat purchase/webhook integration is reserved for a later milestone.
-- Upstash Redis atomically enforces concurrent-job, per-user, global and request-replay limits before contacting Groq. Backend configuration failures deny generation safely.
-- Generated drafts retain exact source evidence, need user review, and cannot replace a description automatically. Accepting preserves the previous description. Transcript revisions protect against stale drafts.
-- The home recording banner is compact. Settings contains account, preferences, notebooks, library actions and help. Offline benchmarks are no longer shown in normal Settings.
-- Local Qwen generation/native bindings are retired. Whisper model downloads remain available. Native streaming SHA-256 replaces slow JavaScript model verification.
+Use Node and npm (package-lock.json). Install with npm ci. Prepare native model assets with npm run models:prepare before building. Run npm start for Metro. Native AI and the editor need a fresh Android development/preview build; Expo Go cannot run the custom module. Build with npx eas-cli@latest build --profile development --platform android (or preview).
 
-## Add your credentials
+The build checks both asset sizes and SHA-256 checksums. EAS uploads the locally prepared model assets using .easignore; model binaries are intentionally excluded from Git. Never build with missing model files. npm run models:check validates the local weights. llama.rn native artifacts are installed by its approved dependency lifecycle script.
 
-Copy [.env.example](.env.example) to `.env.local` in this project root and fill it in. See [Cloud setup and deployment](SpiderNote_Documents/Cloud_Setup.md) for each credential's source, EAS visibility, developer Pro access and exact commands.
+## Included models
 
-The two public app values are `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` and `EXPO_PUBLIC_API_URL`. Set both before creating an APK. Groq, Clerk backend and Upstash credentials are server-only and must never use the public prefix. No real credentials are committed. Online features remain unavailable until credentials and a deployed backend are provided.
+- Whisper base multilingual Q8: 81,768,585 bytes, MIT.
+- Qwen3.5-0.8B Q4_0: 563,036,064 bytes, Apache-2.0. Text-only, non-thinking, CPU inference.
 
-## Run and deploy
+Pinned source URLs, revisions, hashes and licenses are in assets/models/manifest.json. The Qwen file is below 1 GB; that is not a RAM or installed-app-size promise. Models are shipped in Android assets and copied into private writable storage on first use, with checksum verification. No network connection is needed on first launch. This increases installed storage beyond the combined weight-file size.
 
-Use Node.js LTS and npm. In PowerShell, use the `.cmd` wrappers when script policy blocks `.ps1`.
+## Notes and privacy
 
-```powershell
-npm.cmd ci
-npx.cmd expo start --dev-client
-npm.cmd run backend:export
-npx.cmd eas-cli@latest deploy --environment preview --alias preview
-npx.cmd eas-cli@latest build --platform android --profile preview --non-interactive --no-wait
-```
+The editor uses a bundled contenteditable document in react-native-webview. HTML is restricted to writing formats; pasted text is inserted as plain text. The document blocks network resources and external navigation. Raw and Structured versions are stored separately in SQLite. Search and inference use derived plain text. AI never automatically replaces either saved version.
 
-Set the deployed backend origin as the public API URL before building. Install a fresh native build for Clerk, secure storage and native hashing; Expo Go and old APKs cannot provide these modules. EAS project: [@totemn/spidernote](https://expo.dev/accounts/totemn/projects/spidernote), ID `0645aa00-3788-4d8d-ba29-3dbb490147fa`.
+New recordings and imported M4A/AAC, MP3 and WAV files are saved before transcription. Android decoder support varies; files must be below 512 MB. Processing is foreground-only and cancellable. Notes and recordings stay on the device; SQLite is not encrypted. Uninstalling or clearing storage removes local data. Export important notes first. The optional Help report link opens an external form with no note content attached.
 
-## Verify
+Version 3 migrates old notes, transcripts and drafts without dropping originals. Legacy descriptions remain accessible in note options. Notebook management lives in the library. Settings provides exports, deletion and help only. Android phone navigation hides automatically.
 
-```powershell
-npm.cmd test
-npm.cmd run typecheck
-npm.cmd run lint
-npx.cmd expo-doctor@latest
-npx.cmd expo export --platform android --output-dir dist-android
-npm.cmd run backend:export
-```
+## Checks
 
-Tests cover real SQL migrations/revision protection, recovery/deletion, grounding, cloud request validation, signed/invalid JWTs, entitlement denial and upstream failure handling. Cloud tests use generated test keys and mocked providers. Real Groq/Clerk/Upstash integration, native hashing/device behavior, free-hosting runtime limits and 4 GB phone support require live validation after setup. Benchmarks use prerecorded audio; no new recording is needed. Historical reports remain readable.
+- npm run lint
+- npm run typecheck
+- npm test
+- npm run models:check
 
-## Data and references
-
-Source audio stays in app-private document storage. Only confirmed library deletion removes recordings; tombstones retain retryable cleanup. Local data is not synced to an account or separately encrypted by this app. Uninstalling/clearing storage may remove it; export important recordings and notes. [Report an issue](https://forms.gle/ZgD756Q3yxT45BZUA) opens your existing form without attachments or prefills.
-
-See [Android acceptance checks](SpiderNote_Documents/Android_Beta_Checks.md), [current cloud setup](SpiderNote_Documents/Cloud_Setup.md), and the historical [local AI notes](SpiderNote_Documents/Local_AI_Implementation.md). SDK 58 still has transitive npm advisories; review before public release rather than forcing incompatible upgrades.
-
-[Expo API routes](https://docs.expo.dev/router/web/api-routes/) · [SDK 58 Audio](https://docs.expo.dev/versions/v58.0.0/sdk/audio/) · [SQLite](https://docs.expo.dev/versions/v58.0.0/sdk/sqlite/) · [Groq structured outputs](https://console.groq.com/docs/structured-outputs)
+See SpiderNote_Documents/Android_Beta_Checks.md for required native acceptance tests. Desktop checks do not prove Android editor selection behavior, inference compatibility, quality, memory or speed. Other platforms retain manual note editing; offline AI targets Android only.

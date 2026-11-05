@@ -1,3 +1,6 @@
+import { AiProgress } from "@/components/AiProgress";
+import { NotebookManager } from "@/components/NotebookManager";
+import { useImportAudio } from "@/hooks/use-import-audio";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -16,8 +19,13 @@ import { C, ui } from "@/theme/tokens";
 export default function Library() {
   const [filter, setFilter] = useState("all");
   const [notebook, setNotebook] = useState<string>();
-  const { notes, notebooks, error, loading } = useNotes("", filter, notebook);
+  const { notes, notebooks, error, loading, refresh } = useNotes(
+    "",
+    filter,
+    notebook,
+  );
   const { create, busy } = useCreateNote();
+  const audioImport = useImportAudio();
   return (
     <Screen scroll={false}>
       <Onboarding />
@@ -53,15 +61,29 @@ export default function Library() {
               <View style={{ gap: 4 }}>
                 <Text style={ui.heading}>A thought worth keeping?</Text>
                 <Text style={ui.caption}>
-                  Record it now. Come back to it later.
+                  Write it, say it, or bring your own audio.
                 </Text>
               </View>
               <Button
-                label="Start recording"
+                label="Write note"
+                icon="plus"
+                onPress={create}
+                busy={busy}
+              />
+              <Button
+                label="Record voice"
                 icon="mic"
                 onPress={() => router.push("/record")}
               />
+              <Button
+                label="Import audio"
+                icon="headphones"
+                secondary
+                onPress={audioImport.importAudio}
+                busy={audioImport.busy}
+              />
             </View>
+            <AiProgress />
             <View style={ui.between}>
               <Text style={ui.heading}>
                 Your notes{" "}
@@ -103,6 +125,12 @@ export default function Library() {
                 onPress={() => setFilter("pinned")}
               />
             </ScrollView>
+            <NotebookManager
+              onChanged={() => {
+                setNotebook(undefined);
+                refresh();
+              }}
+            />
             {notebooks.length > 0 && (
               <ScrollView
                 horizontal

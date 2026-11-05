@@ -1,165 +1,61 @@
-import { useCallback, useState } from "react";
-import {
-  Alert,
-  Modal,
-  Platform,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { router, useFocusEffect } from "expo-router";
-import { reportAiIssue } from "@/services/feedback";
-import { randomUUID } from "expo-crypto";
-import { AccountCard } from "@/components/AccountCard";
+import { useState } from "react";
+import { Alert, Text, View } from "react-native";
 import { useSQLiteContext } from "expo-sqlite";
-import { listNotes, listNotebooks, type Notebook } from "@/db/repository";
+import { listNotes } from "@/db/repository";
+import { cancelAndWaitForAi } from "@/features/ai/status";
 import { cleanDeletedNotes } from "@/services/recovery";
-import { exportText, localFiles } from "@/services/files";
-import {
-  Brand,
-  Button,
-  Header,
-  Icon,
-  IconButton,
-  Notice,
-  Screen,
-} from "@/components/kit";
-import { C, ui } from "@/theme/tokens";
-import { useImmersiveNavigation } from "@/components/AppNavigationBar";
+import { exportNotes, localFiles } from "@/services/files";
+import { reportAiIssue } from "@/services/feedback";
+import { Brand, Button, Notice, Screen } from "@/components/kit";
+import { ui } from "@/theme/tokens";
 import { errorMessage } from "@/utils/format";
 export default function Settings() {
-  const immersive = useImmersiveNavigation();
-  const db = useSQLiteContext();
-  const [books, setBooks] = useState<Notebook[]>([]);
-  const [count, setCount] = useState(0);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<string | null>();
-  const [name, setName] = useState("");
-  const load = useCallback(async () => {
-    const [notebooks, notes] = await Promise.all([
-      listNotebooks(db),
-      listNotes(db),
-    ]);
-    setBooks(notebooks);
-    setCount(notes.length);
-  }, [db]);
-  useFocusEffect(
-    useCallback(() => {
-      load().catch((error) => setError(errorMessage(error)));
-    }, [load]),
-  );
-  const saveBook = async () => {
-    if (!name.trim() || busy) return;
+  const db = useSQLiteContext(),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const exportAll = async (html: boolean) => {
     setBusy(true);
     try {
-      if (editing)
-        await db.runAsync(
-          "UPDATE notebooks SET name=? WHERE id=?",
-          name.trim(),
-          editing,
-        );
-      else
-        await db.runAsync(
-          "INSERT INTO notebooks VALUES (?,?,?)",
-          randomUUID(),
-          name.trim(),
-          new Date().toISOString(),
-        );
-      setEditing(undefined);
-      setName("");
-      await load();
+      await exportNotes(await listNotes(db), html);
       setError("");
-    } catch (error) {
-      Alert.alert("Could not save notebook", errorMessage(error));
+    } catch (e) {
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
   };
-  const deleteBook = (book: Notebook) =>
-    Alert.alert(
-      `Delete “${book.name}”?`,
-      "Your notes and recordings will stay in the library as unfiled notes.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete notebook",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await db.runAsync("DELETE FROM notebooks WHERE id=?", book.id);
-              await load();
-            } catch (error) {
-              setError(errorMessage(error));
-            }
-          },
-        },
-      ],
-    );
-  const exportAll = async () => {
-    setBusy(true);
-    try {
-      const notes = await listNotes(db);
-      if (!notes.length) throw Error("Create a note before exporting.");
-      await exportText(
-        "all-notes",
-        "SpiderNote — all notes",
-        notes
-          .map((note) => `## ${note.title}\n\n${note.body}\n\n---`)
-          .join("\n\n"),
-        true,
-      );
-    } catch (error) {
-      setError(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const deleteAll = () =>
+  const erase = () =>
     Alert.alert(
       "Delete all local notes and audio?",
-      "This cannot be undone. Export anything you want to keep first. Exported files outside SpiderNote will not be deleted.",
+      "This cannot be undone. Export anything you want to keep first. Bundled models and files exported outside SpiderNote will stay.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Continue",
+          text: "Delete all notes and audio",
           style: "destructive",
-          onPress: () =>
-            Alert.alert(
-              "Permanently erase your library?",
-              `${count} notes and their recordings will be removed from this device.`,
-              [
-                { text: "Keep my notes", style: "cancel" },
-                {
-                  text: "Erase library",
-                  style: "destructive",
-                  onPress: async () => {
-                    setBusy(true);
-                    try {
-                      await db.runAsync(
-                        "UPDATE notes SET deleted_at=?",
-                        new Date().toISOString(),
-                      );
-                      const pending = await cleanDeletedNotes(db, localFiles);
-                      await db.execAsync(
-                        "DELETE FROM notebooks; DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM note_tags);",
-                      );
-                      await load();
-                      if (pending)
-                        setError(
-                          "Some audio files could not be deleted. Cleanup will retry when you open the app.",
-                        );
-                      else setError("");
-                    } catch (error) {
-                      setError(errorMessage(error));
-                    } finally {
-                      setBusy(false);
-                    }
-                  },
-                },
-              ],
-            ),
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await cancelAndWaitForAi();
+              await db.runAsync(
+                "UPDATE notes SET deleted_at=?",
+                new Date().toISOString(),
+              );
+              const pending = await cleanDeletedNotes(db, localFiles);
+              await db.execAsync(
+                "DELETE FROM notebooks; DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM note_tags); DELETE FROM ai_jobs WHERE note_id IS NULL; DELETE FROM benchmark_runs;",
+              );
+              setError(
+                pending
+                  ? "Some audio cleanup is pending. SpiderNote will retry when reopened."
+                  : "",
+              );
+            } catch (e) {
+              setError(errorMessage(e));
+            } finally {
+              setBusy(false);
+            }
+          },
         },
       ],
     );
@@ -169,139 +65,76 @@ export default function Settings() {
         <Text style={ui.title}>Settings</Text>
         <Brand size={38} />
       </View>
-      {error && <Notice error>{error}</Notice>}
-      <AccountCard />
-      <Text style={ui.heading}>Preferences</Text>
-      {Platform.OS === "android" && (
-        <View style={ui.card}>
-          <View style={ui.between}>
-            <Text style={[ui.heading, { flex: 1 }]}>
-              Hide phone navigation bar
-            </Text>
-            <Switch
-              accessibilityLabel="Hide phone navigation bar"
-              value={immersive.hidden}
-              trackColor={{ true: C.violet, false: C.inputBorder }}
-              onValueChange={(value) =>
-                immersive
-                  .update(value)
-                  .catch((error) => setError(errorMessage(error)))
-              }
-            />
-          </View>
-          <Text style={ui.body}>
-            Swipe up from the bottom edge to reveal phone controls.
-          </Text>
-        </View>
-      )}
+      {error ? <Notice error>{error}</Notice> : null}
+      <Text style={ui.heading}>Export written notes</Text>
+      <Text style={ui.body}>
+        Export raw and structured versions. HTML keeps headings, emphasis and
+        lists.
+      </Text>
       <Button
-        label="Offline transcription"
-        secondary
-        onPress={() => router.push("/offline-ai")}
-      />
-      <View style={ui.between}>
-        <Text style={ui.heading}>Notebooks</Text>
-        <IconButton
-          name="plus"
-          label="Create notebook"
-          color={C.violet}
-          onPress={() => {
-            setEditing(null);
-            setName("");
-          }}
-        />
-      </View>
-      <View style={ui.card}>
-        {!books.length && (
-          <Text style={ui.body}>
-            A little structure for your threads. Create a notebook for work,
-            classes, or ideas.
-          </Text>
-        )}
-        {books.map((book) => (
-          <View key={book.id} style={ui.between}>
-            <View style={[ui.row, { flex: 1 }]}>
-              <Icon name="folder" color={C.violet} />
-              <View style={{ flex: 1 }}>
-                <Text style={ui.heading} numberOfLines={1}>
-                  {book.name}
-                </Text>
-                <Text style={ui.caption}>{book.count} notes</Text>
-              </View>
-            </View>
-            <IconButton
-              name="notes"
-              label={`Rename ${book.name}`}
-              onPress={() => {
-                setEditing(book.id);
-                setName(book.name);
-              }}
-            />
-            <IconButton
-              name="trash"
-              label={`Delete ${book.name}`}
-              color={C.coral}
-              onPress={() => deleteBook(book)}
-            />
-          </View>
-        ))}
-      </View>
-      <Text style={ui.heading}>Your library</Text>
-      <Button
-        label="Export written notes"
-        secondary
+        label="Export TXT"
         icon="export"
-        onPress={exportAll}
-        busy={busy}
-      />
-      <Button
-        label="Delete local notes & audio"
-        icon="trash"
-        danger
-        onPress={deleteAll}
+        secondary
+        onPress={() => exportAll(false)}
         disabled={busy}
       />
-      <Text style={ui.caption}>
-        Export important notes before clearing storage or uninstalling.
-      </Text>
+      <Button
+        label="Export formatted HTML"
+        icon="export"
+        secondary
+        onPress={() => exportAll(true)}
+        disabled={busy}
+      />
+      <Text style={ui.heading}>Delete local notes and audio</Text>
+      <Button
+        label="Delete local notes and audio"
+        icon="trash"
+        danger
+        onPress={erase}
+        disabled={busy}
+      />
       <Text style={ui.heading}>Help</Text>
+      <View style={ui.card}>
+        <Text style={ui.heading}>Write or speak</Text>
+        <Text style={ui.body}>
+          Start from Write note, Record voice, or Import audio in your library.
+          Voice notes are transcribed automatically. Saved audio remains
+          available in the note options.
+        </Text>
+        <Text style={ui.heading}>Format your words</Text>
+        <Text style={ui.body}>
+          Tap Aa for headings, emphasis, lists and alignment. Use the checklist
+          button to insert a task. Done saves the note. Undo and Redo work
+          during editing.
+        </Text>
+        <Text style={ui.heading}>Structure offline</Text>
+        <Text style={ui.body}>
+          Tap Structure note to organize the raw text using Qwen3.5. Review the
+          result before saving. Raw and Structured versions stay separate. AI
+          may make mistakes.
+        </Text>
+        <Text style={ui.heading}>Your device, your notes</Text>
+        <Text style={ui.body}>
+          Whisper base multilingual and the structuring model are included in
+          the Android build. No login or model downloads are required. Free
+          storage is needed to prepare models and audio. Export before
+          uninstalling or clearing app storage.
+        </Text>
+        <Text style={ui.body}>
+          Android phone controls hide automatically. Swipe from the bottom edge
+          to reveal them. Other platforms support manual notes; offline AI
+          requires the Android native build.
+        </Text>
+        <Text style={ui.body}>
+          Audio import supports M4A/AAC, MP3 and WAV below 512 MB when the phone
+          can decode them. If processing fails, your saved audio stays available
+          for retry.
+        </Text>
+      </View>
       <Button label="Report a problem" secondary onPress={reportAiIssue} />
-      <Modal
-        visible={editing !== undefined}
-        animationType="slide"
-        onRequestClose={() => setEditing(undefined)}
-      >
-        <Screen>
-          <Header
-            title={editing ? "Rename notebook" : "New notebook"}
-            right={
-              <IconButton
-                name="close"
-                label="Close notebook editor"
-                onPress={() => setEditing(undefined)}
-              />
-            }
-          />
-          <Text style={ui.body}>Give this thread a place to belong.</Text>
-          <TextInput
-            accessibilityLabel="Notebook name"
-            autoFocus
-            value={name}
-            onChangeText={setName}
-            maxLength={60}
-            placeholder="e.g. Little big ideas"
-            placeholderTextColor={C.muted}
-            style={ui.input}
-            onSubmitEditing={saveBook}
-          />
-          <Button
-            label="Save notebook"
-            onPress={saveBook}
-            busy={busy}
-            disabled={!name.trim()}
-          />
-        </Screen>
-      </Modal>
+      <Text style={ui.caption}>
+        Opens an external form. No note content is attached.
+      </Text>
     </Screen>
   );
 }

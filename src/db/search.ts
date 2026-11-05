@@ -1,3 +1,4 @@
+import { transaction } from "./transactions.ts";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 const indexedConnections = new WeakSet<SQLiteDatabase>();
@@ -10,7 +11,7 @@ export async function initializeSearch(db: SQLiteDatabase) {
     "SELECT name FROM sqlite_master WHERE name='note_search'",
   );
   try {
-    await db.withExclusiveTransactionAsync(async (tx) => {
+    await transaction(db, async (tx) => {
       await tx.execAsync(`
         CREATE VIRTUAL TABLE IF NOT EXISTS note_search USING fts5(
           note_id UNINDEXED, title, body, tags, tokenize='unicode61 remove_diacritics 2', prefix='2 3 4'
@@ -21,7 +22,7 @@ export async function initializeSearch(db: SQLiteDatabase) {
         CREATE TRIGGER IF NOT EXISTS search_note_update AFTER UPDATE ON notes BEGIN
           DELETE FROM note_search WHERE rowid=old.rowid;
           INSERT INTO note_search(rowid,note_id,title,body,tags)
-            SELECT new.rowid,new.id,new.title,new.body || ' ' || COALESCE((SELECT content FROM transcripts WHERE note_id=new.id),''),COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=new.id),'')
+            SELECT new.rowid,new.id,new.title,new.body || ' ' || new.structured_text || ' ' || COALESCE((SELECT content FROM transcripts WHERE note_id=new.id),''),COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=new.id),'')
             WHERE new.deleted_at IS NULL;
         END;
         CREATE TRIGGER IF NOT EXISTS search_note_delete AFTER DELETE ON notes BEGIN
@@ -49,7 +50,7 @@ export async function initializeSearch(db: SQLiteDatabase) {
       `);
       if (!existing)
         await tx.execAsync(`INSERT INTO note_search(rowid,note_id,title,body,tags)
-        SELECT n.rowid,n.id,n.title,n.body || ' ' || COALESCE((SELECT content FROM transcripts WHERE note_id=n.id),''),COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=n.id),'')
+        SELECT n.rowid,n.id,n.title,n.body || ' ' || n.structured_text || ' ' || COALESCE((SELECT content FROM transcripts WHERE note_id=n.id),''),COALESCE((SELECT group_concat(t.name,' ') FROM tags t JOIN note_tags nt ON nt.tag_id=t.id WHERE nt.note_id=n.id),'')
         FROM notes n WHERE n.deleted_at IS NULL;`);
     });
     indexedConnections.add(db);

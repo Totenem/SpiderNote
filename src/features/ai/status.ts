@@ -20,9 +20,7 @@ export function acquireAiTask(
   noteId?: string,
 ) {
   if (snapshot.busy)
-    throw Error(
-      "Another AI task or model download is running. Finish or cancel it first.",
-    );
+    throw Error("Another AI task is running. Finish or cancel it first.");
   cancel = abort;
   setAiStatus({ busy: true, phase, progress: 0, noteId });
 }
@@ -46,3 +44,18 @@ const subscribe = (listener: () => void) => {
 };
 export const useAiStatus = () =>
   useSyncExternalStore(subscribe, getAiStatus, getAiStatus);
+
+export async function cancelAndWaitForAi() {
+  cancelAiTask();
+  if (!snapshot.busy) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      if (!snapshot.busy) {
+        listeners.delete(done);
+        resolve();
+      }
+    };
+    listeners.add(done);
+    done();
+  });
+}
